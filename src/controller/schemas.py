@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
+from investigation.enums import HypothesisCategory, normalize_category
+
 
 class HypothesisProposal(BaseModel):
     """A proposed candidate explanation for an observed metric anomaly."""
@@ -12,8 +14,11 @@ class HypothesisProposal(BaseModel):
     title: str = Field(..., min_length=5, description="Clear, concise hypothesis title")
     explanation: str = Field(..., min_length=15, description="Plausible causal mechanism explaining the metric change")
     category: str = Field(
-        default="other",
-        description="Category: tracking_failure | product_regression | acquisition_shift | external_factor | pricing_change | user_behavior | other"
+        default="unspecified",
+        description=(
+            "Cause family, one of: " + " | ".join(c.value for c in HypothesisCategory)
+            + ". Use unspecified / external_unspecified only if unsure; they must be refined before the hypothesis can be supported."
+        ),
     )
     suggested_analysis: str = Field(
         default="",
@@ -23,17 +28,8 @@ class HypothesisProposal(BaseModel):
     @field_validator("category")
     @classmethod
     def validate_category(cls, v: str) -> str:
-        allowed = {
-            "tracking_failure",
-            "product_regression",
-            "acquisition_shift",
-            "external_factor",
-            "pricing_change",
-            "user_behavior",
-            "other",
-        }
-        clean = v.strip().lower()
-        return clean if clean in allowed else "other"
+        """Normalise to a HypothesisCategory; legacy names are migrated, unknown values become 'unspecified'."""
+        return normalize_category(v).value
 
 
 class HypothesesGenerationOutput(BaseModel):
@@ -92,6 +88,10 @@ class EvidenceInterpretation(BaseModel):
     recommended_hypothesis_status: Optional[str] = Field(
         default=None,
         description="supported | refuted | active | deprioritized | none"
+    )
+    refined_category: Optional[str] = Field(
+        default=None,
+        description="If the hypothesis category is unspecified/external_unspecified (or wrong), the specific cause family it belongs to",
     )
     status_update_reason: Optional[str] = Field(
         default=None,

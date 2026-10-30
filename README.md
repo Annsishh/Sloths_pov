@@ -44,9 +44,12 @@ sloths_pov/
 ## Quick Start
 
 ### 1. Requirements
-Install the minimal dependencies:
+Developed and tested on **Python 3.14.3** with pinned dependencies (`requirements.txt`). Use a project venv so
+results do not depend on which interpreter is on PATH:
 ```bash
-pip install -r requirements.txt
+py -3.14 -m venv .venv
+.venv/Scripts/python -m pip install -r requirements.txt   # Windows; use .venv/bin/python elsewhere
+.venv/Scripts/python -m pytest
 ```
 
 ### 2. Generate Datasets
@@ -74,6 +77,6 @@ python generate_data.py --all --output-dir data
 ### 3. Run Validation Tests
 Execute the automated test suite with pytest:
 ```bash
-pytest tests/ -v
+python -m pytest -v        # inside the venv
 ```
 

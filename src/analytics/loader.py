@@ -21,6 +21,8 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from analytics.path_guard import ForbiddenDataPathError, assert_investigator_path
+
 
 # ---------------------------------------------------------------------------
 # Table metadata
@@ -227,6 +229,8 @@ class DataLoader:
         eager: bool = False,
     ) -> None:
         self.data_dir = Path(data_dir) if data_dir is not None else None
+        if self.data_dir is not None:
+            assert_investigator_path(self.data_dir)
         if self.data_dir is not None and not self.data_dir.is_dir():
             raise FileNotFoundError(f"Data directory not found: {self.data_dir}")
 
@@ -270,6 +274,7 @@ class DataLoader:
 
         info = CATALOGUE[table_name]
         csv_path = self.data_dir / info.filename
+        assert_investigator_path(csv_path)
 
         if not csv_path.exists():
             raise FileNotFoundError(

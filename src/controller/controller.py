@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from analytics.executor import AnalyticsExecutor
 from analytics.models import AnalysisRequest, AnalysisResult, TimeWindow
-from controller.capability_catalogue import validate_analysis_plan
+from controller.capability_catalogue import CONTROLLED_OPERATIONS, validate_analysis_plan
 from controller.llm_client import LLMClient, create_llm_client
 from controller.prompts import (
     SYSTEM_INVESTIGATION_PROMPT,
@@ -36,7 +36,9 @@ from investigation.enums import (
     InvestigationStatus,
 )
 from investigation.models import Evidence, Hypothesis, Observation
-from investigation.state import InvestigationState
+from investigation.state import InvestigationState, SupportRuleViolation
+from investigation.support import SupportPolicy
+from investigation.testability import assess_testability
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +52,10 @@ class InvestigationController:
         llm_client: Optional[LLMClient] = None,
         max_iterations: int = 5,
         max_analyses: int = 10,
+        support_policy: Optional[SupportPolicy] = None,
     ) -> None:
         self.executor = executor
+        self.support_policy = support_policy or SupportPolicy()
         self.llm_client = llm_client or create_llm_client()
         self.max_iterations = max_iterations
         self.max_analyses = max_analyses
@@ -65,13 +69,19 @@ class InvestigationController:
     ) -> InvestigationState:
         """Initialize a new investigation state from a metric observation."""
         inv_title = title or f"Investigation of {observation.metric_name} deviation"
-        return InvestigationState.create(title=inv_title, observation=observation)
+        testability = assess_testability(CONTROLLED_OPERATIONS, self.executor.loader.available_tables())
+        return InvestigationState.create(
+            title=inv_title,
+            observation=observation,
+            support_policy=self.support_policy,
+            testability=testability,
+        )
 
     # ------------------------------------------------------------------ individual loop steps
     def step_formulate_hypotheses(self, state: InvestigationState) -> List[Hypothesis]:
         """Ask the LLM to propose at least two competing hypotheses for the observation."""
         obs = state.investigation.observation
-        prompt = format_hypotheses_prompt(obs)
+        prompt = format_hypotheses_prompt(obs, state.testability)
 
         try:
             output: HypothesesGenerationOutput = self.llm_client.generate_structured(
@@ -123,6 +133,7 @@ class InvestigationController:
             evidence_list=evidence_list,
             iteration=iteration,
             max_iterations=self.max_iterations,
+            testability=state.testability,
         )
 
         try:
@@ -239,15 +250,32 @@ class InvestigationController:
             )
             return None
 
+        # 0. Category refinement (placeholders must become specific before support is possible)
+        if interp.refined_category:
+            try:
+                state.refine_category(
+                    hyp.hypothesis_id,
+                    interp.refined_category,
+                    interp.status_update_reason or interp.rationale,
+                )
+            except ValueError as e:
+                state._record_event(
+                    event_type=HistoryEventType.DIRECTION_CHANGED,
+                    title="Category Refinement Rejected",
+                    description=str(e),
+                    metadata={"hypothesis_id": hyp.hypothesis_id},
+                )
+
         # 1. Record Evidence in state
         try:
             inf_type = InferenceType(interp.inference_type)
         except ValueError:
             inf_type = InferenceType.OBSERVATIONAL_CORRELATION
 
+        op_spec = CONTROLLED_OPERATIONS.get(result.operation.lower())
         ev = state.record_evidence(
             finding=interp.finding_summary,
-            source_tables=["orders", "events"],  # Default source references
+            source_tables=list(op_spec.requires_tables) if op_spec and op_spec.requires_tables else ["orders", "events"],
             analysis_result=result,
             population=decision.filters,
             window=result.metadata.get("window"),
@@ -267,18 +295,60 @@ class InvestigationController:
             rationale=interp.rationale,
         )
 
-        # 3. Handle recommended hypothesis status update
+        # 3. Status. The LLM may only recommend; SUPPORTED is granted by the deterministic rule.
+        support_blocked = False
         if interp.recommended_hypothesis_status:
             rec_status = interp.recommended_hypothesis_status.strip().lower()
             if rec_status in {"supported", "refuted", "active", "deprioritized"}:
                 new_status = HypothesisStatus(rec_status)
                 reason = interp.status_update_reason or f"Updated based on evidence {ev.evidence_id} ({stance.value})"
+                if new_status == HypothesisStatus.SUPPORTED:
+                    pass  # decided below by the rule, never directly by the model
+                else:
+                    state.update_hypothesis_status(
+                        hypothesis_id=decision.hypothesis_id_to_test,
+                        new_status=new_status,
+                        reason=reason,
+                        triggered_by_evidence_id=ev.evidence_id,
+                    )
+        # Re-evaluate everything: adjusted p-values shift as tests accumulate.
+        for demoted in state.reassess_supported():
+            state._record_event(
+                event_type=HistoryEventType.DIRECTION_CHANGED,
+                title="Support Withdrawn",
+                description=f"Hypothesis '{demoted}' no longer satisfies the support rule after new evidence.",
+                metadata={"hypothesis_id": demoted},
+            )
+        llm_wanted_support = bool(interp.recommended_hypothesis_status
+                                  and interp.recommended_hypothesis_status.strip().lower() == "supported")
+        if hyp.status in (HypothesisStatus.PROPOSED, HypothesisStatus.ACTIVE):
+            decision_rule = state.evaluate_support(hyp.hypothesis_id)
+            if decision_rule.eligible:
                 state.update_hypothesis_status(
-                    hypothesis_id=decision.hypothesis_id_to_test,
-                    new_status=new_status,
-                    reason=reason,
+                    hypothesis_id=hyp.hypothesis_id,
+                    new_status=HypothesisStatus.SUPPORTED,
+                    reason=(interp.status_update_reason or "Support rule satisfied")
+                           + f" [rule: {state.policy.min_supporting_evidence}+ supporting items from "
+                           f"{state.policy.min_distinct_analyses}+ analyses, significant after correction]",
                     triggered_by_evidence_id=ev.evidence_id,
                 )
+            else:
+                if llm_wanted_support:
+                    support_blocked = True
+                    state._record_event(
+                        event_type=HistoryEventType.DIRECTION_CHANGED,
+                        title="Support Recommendation Not Accepted",
+                        description=f"Model recommended SUPPORTED for '{hyp.hypothesis_id}' but the deterministic "
+                                    "rule is not met: " + "; ".join(decision_rule.reasons),
+                        metadata={"hypothesis_id": hyp.hypothesis_id, "needs_more_evidence": decision_rule.needs_more_evidence},
+                    )
+                if hyp.status == HypothesisStatus.PROPOSED and stance != EvidenceStance.CONTRADICTS:
+                    state.update_hypothesis_status(
+                        hypothesis_id=hyp.hypothesis_id,
+                        new_status=HypothesisStatus.ACTIVE,
+                        reason=f"Under active analysis; evidence {ev.evidence_id} recorded ({stance.value}).",
+                        triggered_by_evidence_id=ev.evidence_id,
+                    )
 
         # 4. Handle newly identified unresolved questions
         for q_text in interp.unresolved_questions:
@@ -290,21 +360,29 @@ class InvestigationController:
 
         # 5. Check if investigation is complete
         if interp.is_investigation_complete:
-            if hyp.status == HypothesisStatus.SUPPORTED:
-                # Conclude investigation
+            supported_ids = state.supported_hypothesis_ids()
+            if supported_ids:
                 conf_level = ConfidenceLevel.MEDIUM
                 if interp.confidence_level:
                     try:
                         conf_level = ConfidenceLevel(interp.confidence_level.lower())
                     except ValueError:
                         pass
-
+                primary = hyp.hypothesis_id if hyp.hypothesis_id in supported_ids else supported_ids[0]
                 state.conclude(
                     conclusion_summary=interp.stopping_reason or interp.finding_summary,
-                    supported_hypothesis_id=hyp.hypothesis_id,
+                    supported_hypothesis_id=primary,
                     confidence_level=conf_level,
                     confidence_justification=interp.confidence_justification or interp.rationale,
                     remaining_uncertainties=interp.unresolved_questions,
+                    additional_supported_ids=[i for i in supported_ids if i != primary],
+                )
+            elif support_blocked:
+                # The model declared victory but the rule needs more evidence: keep investigating.
+                state._record_event(
+                    event_type=HistoryEventType.DIRECTION_CHANGED,
+                    title="Completion Deferred",
+                    description="Model declared the investigation complete, but no hypothesis satisfies the support rule yet.",
                 )
             else:
                 # Stop due to insufficient evidence
@@ -315,6 +393,21 @@ class InvestigationController:
                 )
 
         return interp
+
+    def _conclude_with_supported(self, state: InvestigationState) -> bool:
+        """Conclude from hypotheses the rule has already marked SUPPORTED; False if there are none."""
+        supported_ids = state.supported_hypothesis_ids()
+        if not supported_ids:
+            return False
+        titles = "; ".join(state.investigation.hypotheses[i].title for i in supported_ids)
+        state.conclude(
+            conclusion_summary=f"Supported by deterministic evidence rule: {titles}.",
+            supported_hypothesis_id=supported_ids[0],
+            confidence_level=ConfidenceLevel.MEDIUM,
+            confidence_justification="Support rule satisfied (multiple independent significant analyses, no refuting evidence).",
+            additional_supported_ids=supported_ids[1:],
+        )
+        return True
 
     # ------------------------------------------------------------------ full investigation loop
     def run_investigation_loop(self, state: InvestigationState) -> InvestigationState:
@@ -339,6 +432,8 @@ class InvestigationController:
             # Select analysis
             decision = self.step_select_analysis(state, iteration)
             if not decision:
+                if self._conclude_with_supported(state):
+                    break
                 state.stop_insufficient_evidence(
                     reason="No further analytical actions could be selected.",
                     missing_information_summary="Available tools exhausted without distinguishing competing hypotheses.",
@@ -350,12 +445,14 @@ class InvestigationController:
             result = self.execute_analysis(state, decision)
 
             # Interpret result
-            interp = self.step_interpret_result(state, decision, result)
-            if interp and interp.is_investigation_complete:
+            self.step_interpret_result(state, decision, result)
+            if state.investigation.status in (InvestigationStatus.CONCLUDED, InvestigationStatus.STOPPED_INSUFFICIENT_EVIDENCE):
                 break
 
         # If loop finishes without terminal status, halt with explicit insufficient evidence status
         if state.investigation.status in (InvestigationStatus.OPEN, InvestigationStatus.IN_PROGRESS):
+            if self._conclude_with_supported(state):
+                return state
             state.stop_insufficient_evidence(
                 reason="Maximum investigation iterations reached without conclusive proof.",
                 missing_information_summary="Cycle limit reached with competing hypotheses still unresolved.",

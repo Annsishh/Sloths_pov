@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
+from analytics.statistical import compare_proportions
 from analytics.utils import (
     apply_filters,
     apply_time_filter,
@@ -158,6 +159,11 @@ def tracking_gap_check(
     if needed_user_cols:
         scoped_orders = enrich_with_user_attrs(scoped_orders, users_df, needed_user_cols)
         scoped_events = enrich_with_user_attrs(scoped_events, users_df, needed_user_cols)
+        # An empty frame (e.g. total telemetry loss) is returned un-enriched; keep the dimension columns.
+        for frame in (scoped_orders, scoped_events):
+            for col in needed_user_cols:
+                if col not in frame.columns:
+                    frame[col] = pd.Series(dtype=object)
 
     try:
         scoped_orders = apply_filters(scoped_orders, request.filters)
@@ -281,6 +287,24 @@ def tracking_gap_check(
 
     result_df = pd.DataFrame(rows)
 
+    # Segment-vs-rest test of the match (capture) rate; family-wise (Bonferroni) corrected across segments.
+    overall_p = None
+    if len(result_df) >= 2:
+        tot_n = int(result_df["backend_orders"].sum())
+        tot_k = int(result_df["matched_orders"].sum())
+        seg_p = []
+        for _, r in result_df.iterrows():
+            n_s, k_s = int(r["backend_orders"]), int(r["matched_orders"])
+            n_o, k_o = tot_n - n_s, tot_k - k_s
+            if n_s > 0 and n_o > 0:
+                seg_p.append(compare_proportions(k_s, n_s, k_o, n_o)["p_value"])
+            else:
+                seg_p.append(None)
+        result_df["p_value"] = seg_p
+        tested = [p for p in seg_p if p is not None]
+        if tested:
+            overall_p = min(1.0, min(tested) * len(tested))
+
     # Warnings for severe tracking drop or inflation
     for _, r in result_df.iterrows():
         ratio = r.get("tracking_ratio")
@@ -314,6 +338,7 @@ def tracking_gap_check(
             "window": str(request.window),
             "total_backend_orders": len(backend_orders),
             "total_telemetry_events": len(telemetry_events),
+            "p_value": overall_p,
         },
         limitations=limitations,
         warnings=warnings,

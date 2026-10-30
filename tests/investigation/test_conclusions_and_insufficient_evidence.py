@@ -47,19 +47,30 @@ def investigation_with_evidence():
 def test_conclude_investigation_successfully(investigation_with_evidence):
     state = investigation_with_evidence
 
-    # Record supporting evidence
+    # Record supporting evidence. Phase 1: SUPPORTED needs >=2 supporting items from different
+    # analyses, one significant after multiple-comparison correction, so add a second analysis.
     state.record_evidence(
         finding="Safari telemetry match rate was 0.0% while backend orders succeeded.",
         source_tables=["orders", "events"],
+        operation="tracking_gap_check",
+        p_value=0.0001,
         inference_type=InferenceType.MEASUREMENT_ARTIFACT,
         evidence_id="ev_safari_match",
     )
-    state.link_evidence(
-        evidence_id="ev_safari_match",
-        hypothesis_id="hyp_safari",
-        stance=EvidenceStance.SUPPORTS,
-        rationale="Matches telemetry tracking failure pattern.",
+    state.record_evidence(
+        finding="Safari order_completed event volume fell to zero while other browsers were stable.",
+        source_tables=["events"],
+        operation="event_volume_check",
+        inference_type=InferenceType.MEASUREMENT_ARTIFACT,
+        evidence_id="ev_safari_volume",
     )
+    for ev_id in ("ev_safari_match", "ev_safari_volume"):
+        state.link_evidence(
+            evidence_id=ev_id,
+            hypothesis_id="hyp_safari",
+            stance=EvidenceStance.SUPPORTS,
+            rationale="Matches telemetry tracking failure pattern.",
+        )
 
     # Update hypothesis status to SUPPORTED
     state.update_hypothesis_status(

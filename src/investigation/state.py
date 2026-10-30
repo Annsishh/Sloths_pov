@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from analytics.models import AnalysisResult, TimeWindow
 from investigation.enums import (
+    PLACEHOLDER_CATEGORIES,
     ConfidenceLevel,
+    HypothesisCategory,
+    normalize_category,
     EvidenceStance,
     HistoryEventType,
     HypothesisStatus,
@@ -29,7 +32,12 @@ from investigation.enums import (
 )
 from investigation.models import (
     ConfidenceAssessment,
+    Conclusion,
     Evidence,
+    ExplainedShare,
+    RuledOutHypothesis,
+    UntestableHypothesis,
+    window_to_dict,
     HistoryEvent,
     Hypothesis,
     HypothesisEvidenceLink,
@@ -39,6 +47,8 @@ from investigation.models import (
     UnresolvedQuestion,
     _utc_now,
 )
+from investigation.support import SupportDecision, SupportPolicy, adjusted_p_values, evaluate_support
+from investigation.testability import TestabilityAssessment, assess_testability
 
 
 # Known privileged terms that must never leak from synthetic ground truth into the investigation state
@@ -51,11 +61,43 @@ GROUND_TRUTH_FORBIDDEN_MARKERS = [
 ]
 
 
+class SupportRuleViolation(ValueError):
+    """Raised when a hypothesis is marked SUPPORTED without satisfying the deterministic rule."""
+
+    def __init__(self, hypothesis_id: str, reasons: List[str]) -> None:
+        self.hypothesis_id = hypothesis_id
+        self.reasons = list(reasons)
+        super().__init__(f"Hypothesis '{hypothesis_id}' cannot be SUPPORTED: " + "; ".join(reasons))
+
+
 class InvestigationState:
     """Manages the lifecycle and state transitions of an active or concluded Investigation."""
 
     def __init__(self, investigation: Investigation) -> None:
         self.investigation = investigation
+
+    @property
+    def policy(self) -> SupportPolicy:
+        return SupportPolicy.from_dict(self.investigation.support_policy)
+
+    @property
+    def testability(self) -> Dict[str, TestabilityAssessment]:
+        return self.investigation.testability
+
+    @property
+    def tests_run(self) -> int:
+        """Number of statistical tests (p-valued evidence items) in this investigation."""
+        return sum(1 for e in self.investigation.evidence_store.values() if e.p_value is not None)
+
+    def adjusted_p_values(self) -> Dict[str, float]:
+        return adjusted_p_values(self.investigation, self.policy)
+
+    @staticmethod
+    def default_testability() -> Dict[str, TestabilityAssessment]:
+        """Testability against the full capability catalogue and every known table."""
+        from analytics.loader import CATALOGUE
+        from controller.capability_catalogue import CONTROLLED_OPERATIONS
+        return assess_testability(CONTROLLED_OPERATIONS, CATALOGUE.keys())
 
     # ------------------------------------------------------------------ factory
     @classmethod
@@ -64,6 +106,8 @@ class InvestigationState:
         title: str,
         observation: Observation,
         investigation_id: Optional[str] = None,
+        support_policy: Optional[SupportPolicy] = None,
+        testability: Optional[Dict[str, TestabilityAssessment]] = None,
     ) -> "InvestigationState":
         """Initialize a new investigation triggered by an observed metric deviation."""
         inv_id = investigation_id or f"inv_{uuid.uuid4().hex[:8]}"
@@ -76,6 +120,8 @@ class InvestigationState:
             status=InvestigationStatus.OPEN,
             created_at=now,
             updated_at=now,
+            support_policy=(support_policy or SupportPolicy()).to_dict(),
+            testability=dict(testability) if testability is not None else cls.default_testability(),
         )
 
         state = cls(inv)
@@ -112,11 +158,12 @@ class InvestigationState:
             raise ValueError(f"Hypothesis with ID '{hyp_id}' already exists.")
 
         now = _utc_now()
+        norm_cat = normalize_category(category)
         hyp = Hypothesis(
             hypothesis_id=hyp_id,
             title=title.strip(),
             explanation=explanation.strip(),
-            category=category.strip(),
+            category=norm_cat.value,
             status=HypothesisStatus.PROPOSED,
             created_at=now,
             updated_at=now,
@@ -133,9 +180,56 @@ class InvestigationState:
             event_type=HistoryEventType.HYPOTHESIS_ADDED,
             title=f"Hypothesis Added: {title}",
             description=explanation,
-            metadata={"hypothesis_id": hyp_id, "category": category},
+            metadata={"hypothesis_id": hyp_id, "category": norm_cat.value, "original_category": category.strip()},
         )
         return hyp
+
+    def refine_category(self, hypothesis_id: str, new_category: str, reason: str) -> Hypothesis:
+        """Re-categorise a hypothesis (typically a placeholder) into a specific cause family."""
+        if hypothesis_id not in self.investigation.hypotheses:
+            raise KeyError(f"Hypothesis '{hypothesis_id}' not found in investigation.")
+        if not reason or not reason.strip():
+            raise ValueError("Category refinement requires an explicit reason.")
+        try:
+            new_cat = HypothesisCategory(new_category.strip().lower())
+        except ValueError:
+            raise ValueError(f"Unknown category '{new_category}'.") from None
+        if new_cat in PLACEHOLDER_CATEGORIES or new_cat == HypothesisCategory.MULTIPLE_CAUSES:
+            raise ValueError(f"'{new_cat.value}' is not a specific cause family; refinement must name one.")
+
+        hyp = self.investigation.hypotheses[hypothesis_id]
+        old = hyp.category
+        if old == new_cat.value:
+            return hyp
+        hyp.category = new_cat.value
+        hyp.updated_at = _utc_now()
+        self._record_event(
+            event_type=HistoryEventType.HYPOTHESIS_STATUS_UPDATED,
+            title=f"Hypothesis Category Refined: {hyp.title}: {old} -> {new_cat.value}",
+            description=reason.strip(),
+            metadata={"hypothesis_id": hypothesis_id, "previous_category": old, "new_category": new_cat.value},
+        )
+        return hyp
+
+    # ------------------------------------------------------------------ support rule
+    def evaluate_support(self, hypothesis_id: str) -> SupportDecision:
+        """Apply the deterministic SUPPORTED rule (see investigation.support) without changing state."""
+        if hypothesis_id not in self.investigation.hypotheses:
+            raise KeyError(f"Hypothesis '{hypothesis_id}' not found in investigation.")
+        return evaluate_support(self.investigation, hypothesis_id, self.policy, self.testability)
+
+    def reassess_supported(self) -> List[str]:
+        """Demote SUPPORTED hypotheses that no longer satisfy the rule (e.g. BH-adjusted p-values
+        rise as more tests accumulate). Returns demoted hypothesis ids."""
+        demoted: List[str] = []
+        for hid, hyp in list(self.investigation.hypotheses.items()):
+            if hyp.status == HypothesisStatus.SUPPORTED:
+                decision = self.evaluate_support(hid)
+                if not decision.eligible:
+                    self._set_status(hyp, HypothesisStatus.ACTIVE,
+                                     "Support rule no longer satisfied: " + "; ".join(decision.reasons), None)
+                    demoted.append(hid)
+        return demoted
 
     def update_hypothesis_status(
         self,
@@ -157,33 +251,45 @@ class InvestigationState:
         if hyp.status == new_status:
             return hyp  # No-op
 
+        if new_status == HypothesisStatus.SUPPORTED:
+            decision = self.evaluate_support(hypothesis_id)
+            if not decision.eligible:
+                raise SupportRuleViolation(hypothesis_id, decision.reasons)
+
+        self._set_status(hyp, new_status, reason.strip(), triggered_by_evidence_id)
+        return hyp
+
+    def _set_status(
+        self,
+        hyp: Hypothesis,
+        new_status: HypothesisStatus,
+        reason: str,
+        triggered_by_evidence_id: Optional[str],
+    ) -> None:
         now = _utc_now()
         transition = HypothesisTransition(
             transition_id=f"trans_{uuid.uuid4().hex[:8]}",
             previous_status=hyp.status,
             new_status=new_status,
-            reason=reason.strip(),
+            reason=reason,
             triggered_by_evidence_id=triggered_by_evidence_id,
             timestamp=now,
         )
-
         hyp.history.append(transition)
         hyp.status = new_status
         hyp.updated_at = now
         self.investigation.updated_at = now
-
         self._record_event(
             event_type=HistoryEventType.HYPOTHESIS_STATUS_UPDATED,
             title=f"Hypothesis Status Changed: {hyp.title} -> {new_status.value}",
             description=reason,
             metadata={
-                "hypothesis_id": hypothesis_id,
+                "hypothesis_id": hyp.hypothesis_id,
                 "previous_status": transition.previous_status.value,
                 "new_status": new_status.value,
                 "triggered_by_evidence_id": triggered_by_evidence_id,
             },
         )
-        return hyp
 
     # ------------------------------------------------------------------ evidence
     def record_evidence(
@@ -199,6 +305,8 @@ class InvestigationState:
         limitations: Optional[List[str]] = None,
         inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION,
         evidence_id: Optional[str] = None,
+        p_value: Optional[float] = None,
+        estimated_effect: Optional[float] = None,
     ) -> Evidence:
         """Record an empirical evidence item in the investigation state."""
         if not finding or not finding.strip():
@@ -219,7 +327,10 @@ class InvestigationState:
                 population=population,
                 window=window,
                 inference_type=inference_type,
+                estimated_effect=estimated_effect,
             )
+            if p_value is not None:
+                ev.p_value = p_value
         else:
             ev = Evidence(
                 evidence_id=ev_id,
@@ -233,7 +344,11 @@ class InvestigationState:
                 limitations=list(limitations or []),
                 inference_type=inference_type,
                 recorded_at=_utc_now(),
+                p_value=p_value,
+                estimated_effect=estimated_effect,
             )
+        if ev.p_value is not None and not (0.0 <= ev.p_value <= 1.0):
+            raise ValueError(f"p_value must lie in [0, 1]; got {ev.p_value}")
 
         self.investigation.evidence_store[ev_id] = ev
         self.investigation.updated_at = _utc_now()
@@ -247,6 +362,7 @@ class InvestigationState:
                 "source_tables": source_tables,
                 "operation": ev.operation,
                 "inference_type": ev.inference_type.value,
+                "p_value": ev.p_value,
             },
         )
         return ev
@@ -382,6 +498,10 @@ class InvestigationState:
         )
 
     # ------------------------------------------------------------------ conclusion & stopping
+    def supported_hypothesis_ids(self) -> List[str]:
+        return [h.hypothesis_id for h in self.investigation.hypotheses.values()
+                if h.status == HypothesisStatus.SUPPORTED]
+
     def conclude(
         self,
         conclusion_summary: str,
@@ -390,27 +510,46 @@ class InvestigationState:
         confidence_justification: str,
         assumptions: Optional[List[str]] = None,
         remaining_uncertainties: Optional[List[str]] = None,
-    ) -> None:
-        """Conclude the investigation with a substantiated conclusion."""
+        additional_supported_ids: Optional[List[str]] = None,
+        explained_changes: Optional[Dict[str, float]] = None,
+    ) -> Conclusion:
+        """Conclude the investigation with a substantiated conclusion.
+
+        `explained_changes` maps hypothesis id -> absolute change in the observed metric attributed
+        to that cause. Where omitted, the mean of `estimated_effect` over the hypothesis' supporting
+        evidence is used; if none is available the cause is reported as unquantified.
+        """
         if not conclusion_summary or not conclusion_summary.strip():
             raise ValueError("Conclusion summary cannot be empty.")
         if supported_hypothesis_id not in self.investigation.hypotheses:
             raise KeyError(f"Supported hypothesis '{supported_hypothesis_id}' not found.")
 
-        hyp = self.investigation.hypotheses[supported_hypothesis_id]
-        if hyp.status != HypothesisStatus.SUPPORTED:
-            raise ValueError(
-                f"Cannot conclude with hypothesis '{supported_hypothesis_id}' because its status "
-                f"is '{hyp.status.value}', not 'supported'."
-            )
-        if not hyp.supporting_evidence_ids:
-            raise ValueError(
-                f"Cannot conclude with hypothesis '{supported_hypothesis_id}' because it has no supporting evidence."
-            )
+        ids = [supported_hypothesis_id] + [i for i in (additional_supported_ids or []) if i != supported_hypothesis_id]
+        for hid in ids:
+            if hid not in self.investigation.hypotheses:
+                raise KeyError(f"Supported hypothesis '{hid}' not found.")
+            hyp = self.investigation.hypotheses[hid]
+            if hyp.status != HypothesisStatus.SUPPORTED:
+                raise ValueError(
+                    f"Cannot conclude with hypothesis '{hid}' because its status "
+                    f"is '{hyp.status.value}', not 'supported'."
+                )
+            if not hyp.supporting_evidence_ids:
+                raise ValueError(
+                    f"Cannot conclude with hypothesis '{hid}' because it has no supporting evidence."
+                )
+
+        # Adjusted p-values shift as tests accumulate; make sure the rule still holds at conclusion time.
+        demoted = [d for d in self.reassess_supported() if d in ids]
+        if demoted:
+            raise ValueError(f"Cannot conclude: hypothesis(es) {demoted} no longer satisfy the support rule.")
+
+        conclusion = self._build_conclusion("concluded", ids, explained_changes)
 
         now = _utc_now()
         self.investigation.status = InvestigationStatus.CONCLUDED
         self.investigation.stopping_reason = conclusion_summary.strip()
+        self.investigation.conclusion = conclusion
         self.investigation.confidence = ConfidenceAssessment(
             level=confidence_level,
             justification=confidence_justification.strip(),
@@ -427,9 +566,12 @@ class InvestigationState:
             description=conclusion_summary,
             metadata={
                 "supported_hypothesis_id": supported_hypothesis_id,
+                "supported_hypothesis_ids": ids,
                 "confidence_level": confidence_level.value,
+                "unexplained_share": conclusion.unexplained_share,
             },
         )
+        return conclusion
 
     def stop_insufficient_evidence(
         self,
@@ -437,16 +579,28 @@ class InvestigationState:
         missing_information_summary: str,
         confidence_justification: str,
         remaining_uncertainties: Optional[List[str]] = None,
-    ) -> None:
-        """Halt the investigation because essential data is missing, unobserved, or inconclusive."""
+    ) -> Conclusion:
+        """Halt because essential data is missing, unobserved, or inconclusive.
+
+        The resulting Conclusion lists what was ruled out and why, what remains untestable with
+        the available data, and a concrete data request. Ruling out the testable hypotheses never
+        promotes an untestable one: SUPPORTED always requires positive, rule-satisfying evidence.
+        """
         if not reason or not reason.strip():
             raise ValueError("Stopping reason cannot be empty.")
         if not missing_information_summary or not missing_information_summary.strip():
             raise ValueError("Must specify what missing information prevented further investigation.")
 
+        self.reassess_supported()
+        conclusion = self._build_conclusion(
+            "insufficient_evidence", self.supported_hypothesis_ids(), None,
+            missing_summary=missing_information_summary.strip(),
+        )
+
         now = _utc_now()
         self.investigation.status = InvestigationStatus.STOPPED_INSUFFICIENT_EVIDENCE
         self.investigation.stopping_reason = f"{reason.strip()} [Missing: {missing_information_summary.strip()}]"
+        self.investigation.conclusion = conclusion
         self.investigation.confidence = ConfidenceAssessment(
             level=ConfidenceLevel.LOW,
             justification=confidence_justification.strip(),
@@ -461,7 +615,129 @@ class InvestigationState:
             event_type=HistoryEventType.INVESTIGATION_STOPPED,
             title="Investigation Halted (Insufficient Evidence)",
             description=self.investigation.stopping_reason,
-            metadata={"missing_information": missing_information_summary},
+            metadata={
+                "missing_information": missing_information_summary,
+                "ruled_out": [r.hypothesis_id for r in conclusion.ruled_out],
+                "untestable": [u.hypothesis_id for u in conclusion.untestable],
+                "data_requests": list(conclusion.data_requests),
+            },
+        )
+        return conclusion
+
+    # ------------------------------------------------------------------ conclusion accounting
+    @staticmethod
+    def _fmt_window(w: TimeWindow) -> str:
+        last_day = (w.end - timedelta(microseconds=1)).date()
+        return f"{w.start.date()}..{last_day}"
+
+    def _data_request_text(self, what: str) -> str:
+        obs = self.investigation.observation
+        return (f"{what} for {self._fmt_window(obs.comparison_window)} (comparison window) "
+                f"and {self._fmt_window(obs.baseline_window)} (baseline window)")
+
+    def _estimate_for(self, hyp: Hypothesis, explained_changes: Optional[Dict[str, float]]) -> Tuple[Optional[float], List[str], str]:
+        total = self.investigation.observation.absolute_change
+        if explained_changes and hyp.hypothesis_id in explained_changes:
+            return float(explained_changes[hyp.hypothesis_id]), list(hyp.supporting_evidence_ids), "explicit estimate"
+        effects = [(i, self.investigation.evidence_store[i].estimated_effect) for i in hyp.supporting_evidence_ids
+                   if i in self.investigation.evidence_store and self.investigation.evidence_store[i].estimated_effect is not None]
+        if effects:
+            return (sum(v for _, v in effects) / len(effects), [i for i, _ in effects],
+                    f"mean of {len(effects)} evidence estimate(s)")
+        if normalize_category(hyp.category) == HypothesisCategory.NATURAL_VARIATION:
+            return total, list(hyp.supporting_evidence_ids), "change attributed to chance variation"
+        return None, list(hyp.supporting_evidence_ids), "no quantified effect estimate available"
+
+    def _build_conclusion(
+        self,
+        outcome: str,
+        supported_ids: List[str],
+        explained_changes: Optional[Dict[str, float]],
+        missing_summary: str = "",
+    ) -> Conclusion:
+        inv = self.investigation
+        total = inv.observation.absolute_change
+        warnings: List[str] = []
+
+        causes: List[ExplainedShare] = []
+        for hid in supported_ids:
+            hyp = inv.hypotheses[hid]
+            est, basis, note = self._estimate_for(hyp, explained_changes)
+            share = (est / total) if (est is not None and total != 0) else None
+            causes.append(ExplainedShare(hid, hyp.category, est, share, basis, note))
+
+        quantified = [c for c in causes if c.estimated_change is not None]
+        explained = sum(c.estimated_change for c in quantified)
+        unexplained = total - explained
+        unexplained_share = (unexplained / total) if total != 0 else None
+
+        unquantified = [c.hypothesis_id for c in causes if c.estimated_change is None]
+        if unquantified:
+            warnings.append(
+                f"Supported cause(s) {unquantified} have no quantified effect; the unexplained remainder "
+                "may include their contribution."
+            )
+        if total == 0:
+            warnings.append("Observed change is zero; shares are undefined.")
+        elif abs(explained) > abs(total) * (1 + 1e-9):
+            warnings.append(
+                f"Attributed changes ({explained:+.4g}) exceed the observed change ({total:+.4g}); "
+                "estimates overlap or are overstated."
+            )
+        if total != 0 and any(c.estimated_change is not None and c.estimated_change * total < 0 for c in causes):
+            warnings.append("At least one cause is estimated to move the metric opposite to the observed change.")
+
+        ruled_out: List[RuledOutHypothesis] = []
+        untestable: List[UntestableHypothesis] = []
+        inconclusive: List[str] = []
+        requests: List[str] = []
+        for hid, hyp in inv.hypotheses.items():
+            if hyp.status == HypothesisStatus.SUPPORTED:
+                continue
+            if hyp.status == HypothesisStatus.REFUTED:
+                last = next((t for t in reversed(hyp.history) if t.new_status == HypothesisStatus.REFUTED), None)
+                ruled_out.append(RuledOutHypothesis(
+                    hid, hyp.title, hyp.category,
+                    last.reason if last else "marked refuted",
+                    list(hyp.contradicting_evidence_ids),
+                ))
+                continue
+            ta = inv.testability.get(normalize_category(hyp.category).value)
+            if ta is not None and not ta.testable:
+                if ta.data_request:
+                    request = self._data_request_text(ta.data_request)
+                else:
+                    request = (f"Clarify the specific cause family of hypothesis '{hyp.title}' "
+                               "(its category is not specific enough to test)")
+                untestable.append(UntestableHypothesis(hid, hyp.title, hyp.category, ta.reason, request))
+                if request not in requests:
+                    requests.append(request)
+            else:
+                inconclusive.append(hid)
+
+        if outcome == "insufficient_evidence":
+            for q in inv.unresolved_questions.values():
+                if q.status.value != "answered" and q.suggested_action and q.suggested_action not in requests:
+                    requests.append(q.suggested_action)
+            if not requests:
+                requests.append(
+                    "No specific missing dataset was identified from the hypothesis set"
+                    + (f" ({missing_summary})" if missing_summary else "")
+                    + "; ask domain owners which additional logs could distinguish the remaining hypotheses."
+                )
+
+        return Conclusion(
+            outcome=outcome,
+            total_observed_change=total,
+            supported_causes=causes,
+            explained_change=explained,
+            unexplained_change=unexplained,
+            unexplained_share=unexplained_share,
+            ruled_out=ruled_out,
+            untestable=untestable,
+            inconclusive_hypothesis_ids=inconclusive,
+            data_requests=requests,
+            warnings=warnings,
         )
 
     # ------------------------------------------------------------------ validation
@@ -561,7 +837,7 @@ class InvestigationState:
         return self.investigation.to_dict()
 
     def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), indent=indent)
+        return json.dumps(self.to_dict(), indent=indent, default=str)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "InvestigationState":
@@ -595,20 +871,9 @@ class InvestigationState:
             )
 
         # Reconstruct evidence
-        evidence_store: Dict[str, Evidence] = {}
-        for e_id, e_data in data.get("evidence_store", {}).items():
-            evidence_store[e_id] = Evidence(
-                evidence_id=e_data["evidence_id"],
-                finding=e_data["finding"],
-                source_tables=list(e_data.get("source_tables", [])),
-                analysis_request_id=e_data.get("analysis_request_id"),
-                operation=e_data.get("operation"),
-                population=dict(e_data.get("population", {})),
-                result_summary=dict(e_data.get("result_summary", {})),
-                limitations=list(e_data.get("limitations", [])),
-                inference_type=InferenceType(e_data.get("inference_type", InferenceType.OBSERVATIONAL_CORRELATION.value)),
-                recorded_at=datetime.fromisoformat(e_data["recorded_at"]),
-            )
+        evidence_store: Dict[str, Evidence] = {
+            e_id: Evidence.from_dict(e_data) for e_id, e_data in data.get("evidence_store", {}).items()
+        }
 
         # Reconstruct links
         evidence_links = [
@@ -677,5 +942,8 @@ class InvestigationState:
             history=history,
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
+            conclusion=Conclusion.from_dict(data["conclusion"]) if data.get("conclusion") else None,
+            support_policy=dict(data.get("support_policy", {})),
+            testability={k: TestabilityAssessment.from_dict(v) for k, v in data.get("testability", {}).items()},
         )
         return cls(inv)

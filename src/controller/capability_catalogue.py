@@ -21,6 +21,10 @@ class OperationSpec:
     allowed_dimensions: List[str]
     example: Dict[str, Any]
     notes: str = ""
+    # Tables the operation reads and the analytical capabilities it provides. Hypothesis
+    # testability (investigation.testability) is derived from these.
+    requires_tables: List[str] = field(default_factory=list)
+    provides: List[str] = field(default_factory=list)
 
 
 # Bounded catalogue of operations exposed to the investigation controller
@@ -33,6 +37,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         allowed_dimensions=["browser", "device_type", "app_version"],
         example={"breakdown": ["browser"], "grace_period_seconds": 60},
         notes="Crucial for diagnosing instrumentation drops vs. real transaction declines.",
+        requires_tables=['events', 'orders', 'users'],
+        provides=['telemetry_vs_backend_reconciliation'],
     ),
     "funnel": OperationSpec(
         name="funnel",
@@ -41,6 +47,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["funnel_steps"],
         allowed_dimensions=["browser", "device_type", "acquisition_channel"],
         example={"funnel_steps": ["checkout_started", "order_completed"], "breakdown": ["device_type"]},
+        requires_tables=['events', 'users'],
+        provides=['funnel_conversion'],
     ),
     "funnel_comparison": OperationSpec(
         name="funnel_comparison",
@@ -49,6 +57,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["funnel_steps"],
         allowed_dimensions=["browser", "device_type", "acquisition_channel"],
         example={"funnel_steps": ["checkout_started", "order_completed"], "breakdown": ["browser"]},
+        requires_tables=['events', 'users'],
+        provides=['funnel_conversion'],
     ),
     "segment": OperationSpec(
         name="segment",
@@ -57,6 +67,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["breakdown"],
         allowed_dimensions=["browser", "device_type", "acquisition_channel", "country", "plan_tier"],
         example={"table": "orders", "breakdown": ["acquisition_channel"], "aggregation": "count"},
+        requires_tables=['orders', 'users'],
+        provides=['segment_breakdown'],
     ),
     "segment_comparison": OperationSpec(
         name="segment_comparison",
@@ -65,6 +77,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["breakdown"],
         allowed_dimensions=["browser", "device_type", "acquisition_channel", "country", "plan_tier"],
         example={"table": "orders", "breakdown": ["device_type"], "aggregation": "rate", "metric_column": "status", "metric_value": "completed"},
+        requires_tables=['orders', 'users'],
+        provides=['segment_comparison'],
     ),
     "period_comparison": OperationSpec(
         name="period_comparison",
@@ -73,6 +87,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["aggregation"],
         allowed_dimensions=[],
         example={"table": "orders", "aggregation": "mean", "metric_column": "amount"},
+        requires_tables=['events', 'users'],
+        provides=['period_comparison'],
     ),
     "time_series": OperationSpec(
         name="time_series",
@@ -81,6 +97,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["aggregation"],
         allowed_dimensions=[],
         example={"table": "events", "aggregation": "count", "freq": "D"},
+        requires_tables=['events', 'users'],
+        provides=['time_series'],
     ),
     "release_impact": OperationSpec(
         name="release_impact",
@@ -90,6 +108,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         allowed_dimensions=[],
         example={"release_id": "rel_v1_1", "window_days": 7, "table": "orders", "aggregation": "count"},
         notes="Reports non-causal temporal correlation caveats.",
+        requires_tables=['releases', 'orders', 'users'],
+        provides=['release_before_after'],
     ),
     "exposure_effect": OperationSpec(
         name="exposure_effect",
@@ -99,6 +119,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         allowed_dimensions=[],
         example={"feature_key": "new_checkout", "outcome_event": "order_completed", "post_exposure_days": 7},
         notes="Conducts two-proportion z-test and enforces user deduplication.",
+        requires_tables=['feature_exposures', 'events', 'users'],
+        provides=['experiment_exposure_comparison'],
     ),
     "event_volume_check": OperationSpec(
         name="event_volume_check",
@@ -107,6 +129,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=[],
         allowed_dimensions=["browser", "device_type", "app_version"],
         example={"event_names": ["order_completed", "checkout_started"], "breakdown": ["browser"]},
+        requires_tables=['events', 'users'],
+        provides=['event_volume_by_segment'],
     ),
     "error_analysis": OperationSpec(
         name="error_analysis",
@@ -115,6 +139,8 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=[],
         allowed_dimensions=["device_type", "browser", "acquisition_channel"],
         example={"breakdown": ["device_type"]},
+        requires_tables=['orders', 'users'],
+        provides=['failure_reason_breakdown'],
     ),
     "feedback_analysis": OperationSpec(
         name="feedback_analysis",
@@ -123,8 +149,49 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=[],
         allowed_dimensions=["device_type", "acquisition_channel"],
         example={"breakdown": ["device_type"]},
+        requires_tables=['user_feedback', 'users'],
+        provides=['feedback_sentiment'],
     ),
 }
+
+
+# Columns a filter may reference, with the value types they accept.
+ALLOWED_FILTER_COLUMNS = {
+    "acquisition_channel", "country", "device_type", "browser", "plan_tier",   # users
+    "app_version", "event_name", "page",                                       # events
+    "status", "failure_reason", "currency",                                    # orders
+    "category", "rating",                                                      # feedback
+    "feature_key", "variant",                                                  # exposures
+}
+MAX_FILTER_VALUES = 50
+_SCALAR_TYPES = (str, int, float, bool)
+
+
+def validate_filters(filters: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Return an error message if filters are not plain column == value / column in [values] predicates.
+
+    Only equality and membership are supported (that is all the analytics layer implements);
+    operator syntax (dicts, `col__gt`, `col>`) is rejected explicitly rather than ignored.
+    """
+    for col, val in (filters or {}).items():
+        if not isinstance(col, str) or col not in ALLOWED_FILTER_COLUMNS:
+            return (f"Filter column '{col}' is not permitted. Allowed filter columns: "
+                    f"{sorted(ALLOWED_FILTER_COLUMNS)}")
+        if val is None or isinstance(val, _SCALAR_TYPES):
+            continue
+        if isinstance(val, (list, tuple, set)):
+            if not val:
+                return f"Filter '{col}' has an empty value list."
+            if len(val) > MAX_FILTER_VALUES:
+                return f"Filter '{col}' has {len(val)} values; at most {MAX_FILTER_VALUES} allowed."
+            if not all(isinstance(v, _SCALAR_TYPES) for v in val):
+                return f"Filter '{col}' list values must be str/int/float/bool."
+            continue
+        if isinstance(val, dict):
+            return (f"Filter '{col}' uses operator syntax {sorted(val.keys())}; only equality "
+                    "(column: value) and membership (column: [values]) filters are supported.")
+        return f"Filter '{col}' has unsupported value type {type(val).__name__}."
+    return None
 
 
 def validate_analysis_plan(
@@ -134,7 +201,11 @@ def validate_analysis_plan(
     filters: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, Optional[str]]:
     """Validate a proposed analysis against the controlled capability catalogue.
-    
+
+    Checks the operation, required/allowed parameters and their types, breakdown dimensions
+    (both `dimensions` and `params["breakdown"]`) and filters. An operation with no allowed
+    dimensions rejects any dimension rather than skipping the check.
+
     Returns (is_valid, error_message).
     """
     op_clean = operation.strip().lower()
@@ -145,6 +216,7 @@ def validate_analysis_plan(
         )
 
     spec = CONTROLLED_OPERATIONS[op_clean]
+    params = params or {}
 
     # Check required params
     for req_key in spec.required_params:
@@ -162,12 +234,22 @@ def validate_analysis_plan(
                 f"expected {expected_type}."
             )
 
-    # Check dimensions
-    dims = dimensions or []
-    if spec.allowed_dimensions:
-        for d in dims:
-            if d not in spec.allowed_dimensions:
-                return False, f"Dimension '{d}' is not supported for operation '{op_clean}'."
+    # Check dimensions: every dimension (explicit or via `breakdown`) must be allowed for this op.
+    requested = list(dimensions or [])
+    breakdown = params.get("breakdown")
+    if isinstance(breakdown, list):
+        if not all(isinstance(d, str) for d in breakdown):
+            return False, "Parameter 'breakdown' must be a list of dimension names."
+        requested += breakdown
+    for d in requested:
+        if d not in spec.allowed_dimensions:
+            if not spec.allowed_dimensions:
+                return False, f"Operation '{op_clean}' does not support breakdown dimensions; got '{d}'."
+            return False, f"Dimension '{d}' is not supported for operation '{op_clean}'."
+
+    filt_err = validate_filters(filters)
+    if filt_err:
+        return False, filt_err
 
     return True, None
 

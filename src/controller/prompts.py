@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from analytics.models import AnalysisResult
 from controller.capability_catalogue import describe_capabilities
+from investigation.enums import HypothesisCategory
 from investigation.models import Evidence, Hypothesis, Observation
 
 
@@ -26,9 +27,15 @@ Core Behavioral Principles:
 """
 
 
-def format_hypotheses_prompt(observation: Observation) -> str:
+def format_hypotheses_prompt(observation: Observation, testability: Optional[Dict[str, Any]] = None) -> str:
     """Prompt asking the LLM to generate multiple competing hypotheses for an anomaly."""
     rel_str = f" ({observation.relative_change:+.1%})" if observation.relative_change is not None else ""
+    cat_lines = []
+    for c in HypothesisCategory:
+        ta = (testability or {}).get(c.value)
+        tag = "" if ta is None else (" [testable]" if ta.testable else f" [UNTESTABLE: {ta.reason}]")
+        cat_lines.append(f"- {c.value}{tag}")
+    categories = "\n".join(cat_lines)
     return f"""A product metric deviation has been observed:
 - Metric Name: {observation.metric_name}
 - Baseline Window: {observation.baseline_window} (Value: {observation.baseline_value})
@@ -38,11 +45,12 @@ def format_hypotheses_prompt(observation: Observation) -> str:
 
 Task:
 Formulate at least TWO distinct, competing candidate hypotheses that could explain this deviation.
-Consider different categories such as:
-- tracking_failure (instrumentation dropped or telemetry bug)
-- product_regression (software release bug or checkout error)
-- acquisition_shift (traffic mix diluted by low-intent users)
-- external_factor (outages, payment gateway failure, seasonality)
+Assign each hypothesis exactly one category from this list:
+{categories}
+
+You may propose untestable causes when they are plausible, but they can never be marked supported without data the
+tools cannot provide. Avoid unspecified / external_unspecified; if unavoidable, refine the category (refined_category)
+once evidence reveals it.
 
 Return your output matching the requested HypothesesGenerationOutput schema.
 """
@@ -54,11 +62,14 @@ def format_analysis_selection_prompt(
     evidence_list: List[Evidence],
     iteration: int,
     max_iterations: int,
+    testability: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Prompt asking the LLM to select an analytical operation to test a hypothesis."""
     hyp_text = []
     for h in hypotheses:
-        hyp_text.append(f"- [{h.hypothesis_id}] ({h.status.value.upper()}) {h.title}: {h.explanation}")
+        ta = (testability or {}).get(h.category)
+        note = "" if ta is None or ta.testable else f" <{'UNTESTABLE' if h.category not in ('unspecified', 'external_unspecified') else 'NEEDS CATEGORY REFINEMENT'}>"
+        hyp_text.append(f"- [{h.hypothesis_id}] ({h.status.value.upper()}) [{h.category}]{note} {h.title}: {h.explanation}")
     hyp_summary = "\n".join(hyp_text)
 
     ev_text = []
@@ -141,7 +152,10 @@ Interpret this result honestly based STRICTLY on the numbers returned above.
 1. Determine whether this finding SUPPORTS, CONTRADICTS, or is INCONCLUSIVE regarding hypothesis [{hypothesis.hypothesis_id}].
 2. Summarize the empirical finding concisely, quoting exact values from the tool output.
 3. Explain your rationale.
-4. If the evidence conclusively supports or refutes this hypothesis, recommend an updated status.
+4. If the evidence supports or refutes this hypothesis, recommend an updated status. Recommending "supported" is only a
+   recommendation: the system grants it only after multiple independent analyses, statistically significant after
+   multiple-comparison correction, with no contradicting evidence. If the hypothesis category is unspecified or wrong,
+   set refined_category to the specific cause family.
 5. If the evidence is sufficient to conclude the overall investigation (or halt due to missing data), set is_investigation_complete=True and supply stopping_reason and confidence_level.
 
 Return your interpretation matching the requested EvidenceInterpretation schema.

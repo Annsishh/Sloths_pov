@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
+import warnings
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -13,6 +15,8 @@ from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 from pydantic import BaseModel, ValidationError
 
 T = TypeVar("T", bound=BaseModel)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -214,6 +218,12 @@ class GenericHTTPClient(LLMClient):
             raise ValueError(f"Failed to validate LLM output against schema {schema.__name__}: {str(e)}\nRaw: {raw_output}") from e
 
 
+_MOCK_FALLBACK_MESSAGE = (
+    "!!! NO LLM API KEY CONFIGURED: falling back to MockLLMClient. Results are NOT from a real model. "
+    "Set LLM_API_KEY (or OPENAI_API_KEY / GEMINI_API_KEY), or request provider='mock' explicitly to silence this."
+)
+
+
 def create_llm_client(provider: Optional[str] = None) -> LLMClient:
     """Factory creating an LLMClient instance based on environment and requested provider.
     
@@ -222,6 +232,10 @@ def create_llm_client(provider: Optional[str] = None) -> LLMClient:
     prov = (provider or os.getenv("LLM_PROVIDER", "")).strip().lower()
     has_key = bool(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("GEMINI_API_KEY"))
 
-    if prov == "mock" or not has_key:
+    if prov == "mock":
+        return MockLLMClient()
+    if not has_key:
+        warnings.warn(_MOCK_FALLBACK_MESSAGE, RuntimeWarning, stacklevel=2)
+        logger.warning(_MOCK_FALLBACK_MESSAGE)
         return MockLLMClient()
     return GenericHTTPClient()

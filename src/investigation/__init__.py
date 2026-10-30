@@ -13,6 +13,9 @@ Exports:
 """
 
 from investigation.enums import (
+    HypothesisCategory,
+    LEGACY_CATEGORY_ALIASES,
+    normalize_category,
     ConfidenceLevel,
     EvidenceStance,
     HistoryEventType,
@@ -22,6 +25,10 @@ from investigation.enums import (
     QuestionStatus,
 )
 from investigation.models import (
+    Conclusion,
+    ExplainedShare,
+    RuledOutHypothesis,
+    UntestableHypothesis,
     ConfidenceAssessment,
     Evidence,
     HistoryEvent,
@@ -32,7 +39,9 @@ from investigation.models import (
     Observation,
     UnresolvedQuestion,
 )
-from investigation.state import InvestigationState
+from investigation.state import InvestigationState, SupportRuleViolation
+from investigation.support import SupportDecision, SupportPolicy
+from investigation.testability import TestabilityAssessment, assess_testability
 
 __all__ = [
     # Enums
@@ -55,4 +64,9 @@ __all__ = [
     "Investigation",
     # State
     "InvestigationState",
+    "SupportRuleViolation",
+    # Phase 1
+    "HypothesisCategory", "LEGACY_CATEGORY_ALIASES", "normalize_category",
+    "Conclusion", "ExplainedShare", "RuledOutHypothesis", "UntestableHypothesis",
+    "SupportPolicy", "SupportDecision", "TestabilityAssessment", "assess_testability",
 ]

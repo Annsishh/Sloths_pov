@@ -15,6 +15,8 @@ MENTION_ALLOWLIST = {
     Path("investigation/state.py"),
     Path("controller/prompts.py"),
 }
+# The runtime guard must name the term in order to block it; it may build Paths but never read files.
+GUARD_FILES = {Path("analytics/path_guard.py")}
 FORBIDDEN_STRINGS = ["ground_truth", "scenario_ground_truth", "ground-truth"]
 
 
@@ -48,7 +50,7 @@ def test_guarded_code_does_not_reference_ground_truth_paths():
     offenders = []
     for path in _guarded_files():
         rel = path.relative_to(SRC)
-        if rel in MENTION_ALLOWLIST:
+        if rel in MENTION_ALLOWLIST or rel in GUARD_FILES:
             continue
         text = path.read_text(encoding="utf-8").lower()
         for term in FORBIDDEN_STRINGS:
@@ -66,4 +68,15 @@ def test_allowlisted_files_only_mention_ground_truth_as_inert_strings():
                 fn = ast.unparse(node.func)
                 assert fn not in {"open", "Path", "os.path.join", "pd.read_csv", "json.load"}, (
                     f"{rel}: unexpected file access call {fn}"
+                )
+
+
+def test_guard_files_never_read_files():
+    for rel in GUARD_FILES:
+        tree = ast.parse((SRC / rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fn = ast.unparse(node.func)
+                assert fn not in {"open", "pd.read_csv", "json.load"} and not fn.endswith((".read_text", ".open", ".read_bytes")), (
+                    f"{rel}: unexpected file read {fn}"
                 )

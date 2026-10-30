@@ -14,6 +14,7 @@ from controller.schemas import (
     HypothesesGenerationOutput,
     HypothesisProposal,
 )
+from investigation.support import SupportPolicy
 from investigation import (
     ConfidenceLevel,
     EvidenceStance,
@@ -31,7 +32,13 @@ def mock_dataset_controller():
         {"order_id": f"o{i}", "user_id": f"u{i}", "status": "failed", "failure_reason": "card_declined", "timestamp": pd.Timestamp("2026-09-12T10:00:00Z")}
         for i in range(5)
     ])
-    loader = DataLoader.from_dataframes({"users": users_df, "orders": orders_df})
+    # Phase 1: `time_series` (needs events) must be available for third_party_outage to be testable.
+    events_df = pd.DataFrame([
+        {"event_id": f"e{i}", "user_id": f"u{i}", "session_id": f"s{i}", "timestamp": pd.Timestamp("2026-09-12T10:00:00Z"),
+         "event_name": "checkout_failed", "device_type": "mobile", "browser": "Chrome", "app_version": "v2.3.8"}
+        for i in range(5)
+    ])
+    loader = DataLoader.from_dataframes({"users": users_df, "orders": orders_df, "events": events_df})
     executor = AnalyticsExecutor(loader)
 
     # Sequence of responses:
@@ -85,15 +92,35 @@ def mock_dataset_controller():
             dimensions=["device_type"],
             rationale="Verify that failed orders were predominantly card_declined.",
         ),
-        # Interpretation 2: Supports hyp_2 -> Concluded
+        # Interpretation 2: Supports hyp_2, but ONE analysis is not enough for the deterministic
+        # support rule (Phase 1), so the model's "complete" claim is deferred. The model also refines the
+        # placeholder category external_unspecified into a specific, testable one.
         EvidenceInterpretation(
             hypothesis_id="hyp_2",
             stance="supports",
             finding_summary="100% of failed orders (5/5) were card_declined.",
             rationale="Substantiates user card decline hypothesis.",
             inference_type="observational_correlation",
+            refined_category="third_party_outage",
             recommended_hypothesis_status="supported",
             status_update_reason="Confirmed card_declined was the exclusive failure reason.",
+            is_investigation_complete=True,
+        ),
+        # Iteration 3: independent second analysis of the same hypothesis
+        AnalysisDecision(
+            hypothesis_id_to_test="hyp_2",
+            operation="time_series",
+            parameters={"table": "orders", "aggregation": "count", "freq": "D"},
+            rationale="Check that failed orders cluster in time consistent with a payment-side event.",
+        ),
+        EvidenceInterpretation(
+            hypothesis_id="hyp_2",
+            stance="supports",
+            finding_summary="All 5 failed orders occurred on 2026-09-12, concentrated in a single day.",
+            rationale="Concentration in one window is consistent with an external card-network event.",
+            inference_type="observational_correlation",
+            recommended_hypothesis_status="supported",
+            status_update_reason="Second independent analysis agrees.",
             is_investigation_complete=True,
             stopping_reason="The conversion drop was caused by user payment declines rather than infrastructure failure.",
             confidence_level="high",
@@ -102,7 +129,11 @@ def mock_dataset_controller():
     ]
 
     mock_llm = MockLLMClient(canned_responses=canned)
-    return InvestigationController(executor=executor, llm_client=mock_llm, max_iterations=3)
+    # The tiny mock dataset has no inferential test, so require 0 significant items (other thresholds stay default).
+    return InvestigationController(
+        executor=executor, llm_client=mock_llm, max_iterations=3,
+        support_policy=SupportPolicy(min_significant_supporting=0),
+    )
 
 
 def test_contradiction_and_hypothesis_revision_loop(mock_dataset_controller):
@@ -135,7 +166,8 @@ def test_contradiction_and_hypothesis_revision_loop(mock_dataset_controller):
     # Verify hyp_2 was SUPPORTED
     hyp_2 = final_state.investigation.hypotheses["hyp_2"]
     assert hyp_2.status == HypothesisStatus.SUPPORTED
-    assert len(hyp_2.supporting_evidence_ids) == 1
+    assert len(hyp_2.supporting_evidence_ids) == 2
+    assert hyp_2.category == "third_party_outage"
 
     # Verify investigation concluded with hyp_2
     assert final_state.investigation.status == InvestigationStatus.CONCLUDED

@@ -50,10 +50,12 @@ class TimeWindow:
     # ------------------------------------------------------------------ helpers
     @classmethod
     def from_iso(cls, start: str, end: str) -> "TimeWindow":
-        return cls(
-            start=datetime.fromisoformat(start).astimezone(timezone.utc),
-            end=datetime.fromisoformat(end).astimezone(timezone.utc),
-        )
+        def _parse(raw: str) -> datetime:
+            dt = datetime.fromisoformat(raw)
+            # Naive / date-only strings are UTC by contract; astimezone() would assume local time.
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+        return cls(start=_parse(start), end=_parse(end))
 
     def duration_days(self) -> float:
         return (self.end - self.start).total_seconds() / 86400.0

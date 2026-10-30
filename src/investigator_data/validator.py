@@ -201,7 +201,8 @@ class DataValidator:
                 user_browser = dict(zip(users_df["user_id"], users_df["browser"]))
                 
                 # Comparable segment & window: Safari post-drop
-                orders_df["browser"] = orders_df["user_id"].map(user_browser)
+                # Work on a copy: mutating the shared table leaked a derived `browser` column into orders.csv.
+                orders_df = orders_df.assign(browser=orders_df["user_id"].map(user_browser))
                 safari_orders = orders_df[
                     (orders_df["browser"] == "Safari")
                     & (orders_df["status"] == "completed")

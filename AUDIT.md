@@ -101,3 +101,15 @@ Legend: **CONFIRMED** = gap is real · **PARTIAL** = some of it exists · **ALRE
 - `requirements.txt`: added `scipy`, `pydantic`.
 - `tests/analytics/test_loader.py::test_loader_real_dataset`: replaced a hard-coded `C:/Users/ANISHA/OneDrive/Desktop/...` path with a repo-relative one. It had been silently skipping.
 - New `tests/test_source_isolation.py` (4 tests): static guard that `controller/`, `investigation/`, `analytics/` neither import generator/scenario modules nor reference ground-truth paths.
+
+## Status after Phase 1
+
+Phase 1 items now ALREADY HANDLED: category enum + legacy migration (`investigation/enums.py`), derived testability
+(`investigation/testability.py`), deterministic SUPPORTED rule (`investigation/support.py`, enforced in
+`InvestigationState.update_hypothesis_status`), explained-change accounting and the INSUFFICIENT_EVIDENCE report
+(`Conclusion` in `investigation/models.py`, built in `InvestigationState._build_conclusion`), untestable-promotion
+guardrail. Also done early: evidence-window round-trip bug, filter/dimension validation
+(`validate_analysis_plan`), runtime ground-truth path guard (`analytics/path_guard.py`), mock-fallback warning,
+`TimeWindow.from_iso` naive-timestamp bug, validator column leak into `tracking_failure/orders.csv`,
+`tracking_gap_check` empty-telemetry crash. Benjamini–Hochberg exists (`analytics/multiple_testing.py`) and is applied
+across the investigation's p-valued evidence; wiring p-values into more tools is Phase 2.

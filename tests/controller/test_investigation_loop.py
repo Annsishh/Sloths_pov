@@ -81,10 +81,32 @@ def real_tracking_failure_controller():
             confidence_level="high",
             confidence_justification="Direct cross-table comparison confirmed backend orders were intact while telemetry was dropped exclusively on Safari.",
         ),
+        # Phase 1: the model declared victory after ONE analysis; the deterministic support rule
+        # (>=2 independent analyses) defers completion, so the loop asks for a second, independent check.
+        AnalysisDecision(
+            hypothesis_id_to_test="hyp_1",
+            operation="event_volume_check",
+            parameters={"event_names": ["order_completed"], "breakdown": ["browser"]},
+            dimensions=["browser"],
+            rationale="Independently confirm that Safari order_completed telemetry volume collapsed.",
+        ),
+        EvidenceInterpretation(
+            hypothesis_id="hyp_1",
+            stance="supports",
+            finding_summary="Safari order_completed event volume collapsed after the shift while other browsers were stable.",
+            rationale="A second, independent view of the event stream agrees with the tracking gap check.",
+            inference_type="measurement_artifact",
+            recommended_hypothesis_status="supported",
+            status_update_reason="Independent telemetry volume check agrees with the reconciliation.",
+            is_investigation_complete=True,
+            stopping_reason="The conversion decline is entirely an instrumentation failure on Safari; financial revenue was unaffected.",
+            confidence_level="high",
+            confidence_justification="Two independent analyses agree; reconciliation test is significant after correction.",
+        ),
     ]
 
     mock_llm = MockLLMClient(canned_responses=canned)
-    return InvestigationController(executor=executor, llm_client=mock_llm, max_iterations=3)
+    return InvestigationController(executor=executor, llm_client=mock_llm, max_iterations=4)
 
 
 def test_investigation_loop_tracking_failure_scenario(real_tracking_failure_controller):
@@ -127,7 +149,7 @@ def test_investigation_loop_tracking_failure_scenario(real_tracking_failure_cont
     ]
     assert len(supported_hyps) == 1
     assert "Safari" in supported_hyps[0].title
-    assert len(supported_hyps[0].supporting_evidence_ids) == 1
+    assert len(supported_hyps[0].supporting_evidence_ids) == 2  # two independent analyses (Phase 1 rule)
 
     # Assert unresolved question was recorded
     assert len(final_state.investigation.unresolved_questions) >= 1

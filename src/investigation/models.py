@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from analytics.models import AnalysisResult, TimeWindow
+from investigation.testability import TestabilityAssessment
 from investigation.enums import (
     ConfidenceLevel,
     EvidenceStance,
@@ -31,6 +32,36 @@ from investigation.enums import (
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def window_to_dict(w: Optional[TimeWindow]) -> Optional[Dict[str, str]]:
+    """Lossless serialisation of a TimeWindow (full ISO timestamps, not date-only)."""
+    return {"start": w.start.isoformat(), "end": w.end.isoformat()} if w else None
+
+
+def window_from_any(raw: Any) -> Optional[TimeWindow]:
+    """Rebuild a TimeWindow from a TimeWindow, {start,end} dict, or legacy '[a – b)' string."""
+    if raw is None or isinstance(raw, TimeWindow):
+        return raw
+    if isinstance(raw, dict):
+        return TimeWindow.from_iso(raw["start"], raw["end"])
+    if isinstance(raw, str) and " – " in raw:
+        a, b = raw.strip("[]()").split(" – ")
+        return TimeWindow.from_iso(a, b)
+    raise ValueError(f"Cannot parse time window from {raw!r}")
+
+
+def extract_p_value(result: AnalysisResult) -> Optional[float]:
+    """Pull a p-value out of an analysis result (metadata first, then a `p_value` column)."""
+    meta = result.metadata.get("p_value") if isinstance(result.metadata, dict) else None
+    if meta is not None:
+        return float(meta)
+    data = result.data
+    if hasattr(data, "columns") and "p_value" in data.columns:
+        vals = data["p_value"].dropna()
+        if len(vals):
+            return float(vals.min())
+    return None
 
 
 @dataclass
@@ -52,8 +83,8 @@ class Observation:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "metric_name": self.metric_name,
-            "baseline_window": str(self.baseline_window),
-            "comparison_window": str(self.comparison_window),
+            "baseline_window": window_to_dict(self.baseline_window),
+            "comparison_window": window_to_dict(self.comparison_window),
             "baseline_value": self.baseline_value,
             "comparison_value": self.comparison_value,
             "absolute_change": self.absolute_change,
@@ -64,25 +95,8 @@ class Observation:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Observation":
-        # Supports reconstructing TimeWindow if ISO strings or objects are passed
-        bw = data["baseline_window"]
-        cw = data["comparison_window"]
-        if isinstance(bw, str) and " – " in bw:
-            # parse string format e.g. [2026-09-01 – 2026-09-10)
-            parts = bw.strip("[]()").split(" – ")
-            bw_obj = TimeWindow.from_iso(parts[0], parts[1])
-        elif isinstance(bw, dict):
-            bw_obj = TimeWindow.from_iso(bw["start"], bw["end"])
-        else:
-            bw_obj = bw
-
-        if isinstance(cw, str) and " – " in cw:
-            parts = cw.strip("[]()").split(" – ")
-            cw_obj = TimeWindow.from_iso(parts[0], parts[1])
-        elif isinstance(cw, dict):
-            cw_obj = TimeWindow.from_iso(cw["start"], cw["end"])
-        else:
-            cw_obj = cw
+        bw_obj = window_from_any(data["baseline_window"])
+        cw_obj = window_from_any(data["comparison_window"])
 
         ts = data.get("timestamp")
         ts_dt = datetime.fromisoformat(ts).astimezone(timezone.utc) if isinstance(ts, str) else _utc_now()
@@ -118,6 +132,10 @@ class Evidence:
     limitations: List[str] = field(default_factory=list)
     inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION
     recorded_at: datetime = field(default_factory=_utc_now)
+    # p-value of the statistical test behind this evidence, if any (feeds multiple-testing correction).
+    p_value: Optional[float] = None
+    # Absolute change in the observed metric this evidence attributes to its cause (feeds explained-share accounting).
+    estimated_effect: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -127,12 +145,32 @@ class Evidence:
             "analysis_request_id": self.analysis_request_id,
             "operation": self.operation,
             "population": dict(self.population),
-            "window": str(self.window) if self.window else None,
+            "window": window_to_dict(self.window),
             "result_summary": dict(self.result_summary),
             "limitations": list(self.limitations),
             "inference_type": self.inference_type.value,
             "recorded_at": self.recorded_at.isoformat(),
+            "p_value": self.p_value,
+            "estimated_effect": self.estimated_effect,
         }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Evidence":
+        return cls(
+            evidence_id=d["evidence_id"],
+            finding=d["finding"],
+            source_tables=list(d.get("source_tables", [])),
+            analysis_request_id=d.get("analysis_request_id"),
+            operation=d.get("operation"),
+            population=dict(d.get("population", {})),
+            window=window_from_any(d.get("window")),
+            result_summary=dict(d.get("result_summary", {})),
+            limitations=list(d.get("limitations", [])),
+            inference_type=InferenceType(d.get("inference_type", InferenceType.OBSERVATIONAL_CORRELATION.value)),
+            recorded_at=datetime.fromisoformat(d["recorded_at"]),
+            p_value=d.get("p_value"),
+            estimated_effect=d.get("estimated_effect"),
+        )
 
     @classmethod
     def from_analysis_result(
@@ -144,6 +182,7 @@ class Evidence:
         population: Optional[Dict[str, Any]] = None,
         window: Optional[TimeWindow] = None,
         inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION,
+        estimated_effect: Optional[float] = None,
     ) -> "Evidence":
         """Construct an Evidence item directly from a verified AnalysisResult."""
         summary_data: Dict[str, Any] = {}
@@ -167,6 +206,8 @@ class Evidence:
             limitations=list(result.limitations),
             inference_type=inference_type,
             recorded_at=_utc_now(),
+            p_value=extract_p_value(result),
+            estimated_effect=estimated_effect,
         )
 
 
@@ -318,6 +359,110 @@ class HistoryEvent:
 
 
 @dataclass
+class ExplainedShare:
+    """Share of the observed metric change attributed to one supported cause."""
+    hypothesis_id: str
+    category: str
+    estimated_change: Optional[float]   # absolute change in the observed metric; None = not quantified
+    share: Optional[float]              # estimated_change / total observed change
+    basis_evidence_ids: List[str] = field(default_factory=list)
+    note: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"hypothesis_id": self.hypothesis_id, "category": self.category,
+                "estimated_change": self.estimated_change, "share": self.share,
+                "basis_evidence_ids": list(self.basis_evidence_ids), "note": self.note}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ExplainedShare":
+        return cls(d["hypothesis_id"], d["category"], d.get("estimated_change"), d.get("share"),
+                   list(d.get("basis_evidence_ids", [])), d.get("note", ""))
+
+
+@dataclass
+class RuledOutHypothesis:
+    hypothesis_id: str
+    title: str
+    category: str
+    reason: str
+    evidence_ids: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"hypothesis_id": self.hypothesis_id, "title": self.title, "category": self.category,
+                "reason": self.reason, "evidence_ids": list(self.evidence_ids)}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "RuledOutHypothesis":
+        return cls(d["hypothesis_id"], d["title"], d["category"], d["reason"], list(d.get("evidence_ids", [])))
+
+
+@dataclass
+class UntestableHypothesis:
+    hypothesis_id: str
+    title: str
+    category: str
+    reason: str
+    data_request: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"hypothesis_id": self.hypothesis_id, "title": self.title, "category": self.category,
+                "reason": self.reason, "data_request": self.data_request}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "UntestableHypothesis":
+        return cls(d["hypothesis_id"], d["title"], d["category"], d["reason"], d.get("data_request", ""))
+
+
+@dataclass
+class Conclusion:
+    """Final structured outcome: supported causes with explained shares, the unexplained
+    remainder, and (when evidence is insufficient) what was ruled out, what could not be
+    tested, and what data to request."""
+    outcome: str                                  # "concluded" | "insufficient_evidence"
+    total_observed_change: float
+    supported_causes: List[ExplainedShare] = field(default_factory=list)
+    explained_change: float = 0.0                 # sum of quantified estimates
+    unexplained_change: float = 0.0               # total - explained (signed)
+    unexplained_share: Optional[float] = None
+    ruled_out: List[RuledOutHypothesis] = field(default_factory=list)
+    untestable: List[UntestableHypothesis] = field(default_factory=list)
+    inconclusive_hypothesis_ids: List[str] = field(default_factory=list)
+    data_requests: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "outcome": self.outcome,
+            "total_observed_change": self.total_observed_change,
+            "supported_causes": [c.to_dict() for c in self.supported_causes],
+            "explained_change": self.explained_change,
+            "unexplained_change": self.unexplained_change,
+            "unexplained_share": self.unexplained_share,
+            "ruled_out": [r.to_dict() for r in self.ruled_out],
+            "untestable": [u.to_dict() for u in self.untestable],
+            "inconclusive_hypothesis_ids": list(self.inconclusive_hypothesis_ids),
+            "data_requests": list(self.data_requests),
+            "warnings": list(self.warnings),
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Conclusion":
+        return cls(
+            outcome=d["outcome"],
+            total_observed_change=d["total_observed_change"],
+            supported_causes=[ExplainedShare.from_dict(x) for x in d.get("supported_causes", [])],
+            explained_change=d.get("explained_change", 0.0),
+            unexplained_change=d.get("unexplained_change", 0.0),
+            unexplained_share=d.get("unexplained_share"),
+            ruled_out=[RuledOutHypothesis.from_dict(x) for x in d.get("ruled_out", [])],
+            untestable=[UntestableHypothesis.from_dict(x) for x in d.get("untestable", [])],
+            inconclusive_hypothesis_ids=list(d.get("inconclusive_hypothesis_ids", [])),
+            data_requests=list(d.get("data_requests", [])),
+            warnings=list(d.get("warnings", [])),
+        )
+
+
+@dataclass
 class Investigation:
     """The aggregate root representing an active or concluded product investigation.
     
@@ -338,6 +483,9 @@ class Investigation:
     history: List[HistoryEvent] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utc_now)
     updated_at: datetime = field(default_factory=_utc_now)
+    conclusion: Optional[Conclusion] = None
+    support_policy: Dict[str, Any] = field(default_factory=dict)
+    testability: Dict[str, TestabilityAssessment] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -354,4 +502,7 @@ class Investigation:
             "history": [ev.to_dict() for ev in self.history],
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "conclusion": self.conclusion.to_dict() if self.conclusion else None,
+            "support_policy": dict(self.support_policy),
+            "testability": {k: v.to_dict() for k, v in self.testability.items()},
         }

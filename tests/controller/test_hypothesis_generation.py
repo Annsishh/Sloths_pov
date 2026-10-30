@@ -66,11 +66,12 @@ def test_step_formulate_hypotheses_creates_competing_hypotheses(sample_controlle
     h2 = created[1]
 
     assert h1.title == "Safari client-side tracking failure"
-    assert h1.category == "tracking_failure"
+    # Phase 1: legacy category names are migrated to the new enum values.
+    assert h1.category == "tracking_loss"
     assert h1.status == HypothesisStatus.PROPOSED
 
     assert h2.title == "Mobile checkout payment gateway crash"
-    assert h2.category == "product_regression"
+    assert h2.category == "code_regression"
     assert h2.status == HypothesisStatus.PROPOSED
 
     # Check history events

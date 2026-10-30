@@ -73,3 +73,54 @@ class HistoryEventType(str, Enum):
     QUESTION_ANSWERED = "question_answered"
     INVESTIGATION_CONCLUDED = "investigation_concluded"
     INVESTIGATION_STOPPED = "investigation_stopped"
+
+
+class HypothesisCategory(str, Enum):
+    """Cause families a hypothesis can belong to.
+
+    The last two members are placeholders, not causes: a hypothesis in either must be
+    refined into a specific category before it can be SUPPORTED.
+    """
+    CODE_REGRESSION = "code_regression"
+    FEATURE_OR_EXPERIMENT_EFFECT = "feature_or_experiment_effect"
+    CONFIG_OR_FLAG_CHANGE = "config_or_flag_change"
+    PERFORMANCE_DEGRADATION = "performance_degradation"
+    PRICING_OR_POLICY_CHANGE = "pricing_or_policy_change"
+    TRAFFIC_MIX_SHIFT = "traffic_mix_shift"
+    BOT_OR_INVALID_TRAFFIC = "bot_or_invalid_traffic"
+    TRACKING_LOSS = "tracking_loss"
+    PIPELINE_OR_DEFINITION_CHANGE = "pipeline_or_definition_change"
+    SEASONALITY_OR_CALENDAR = "seasonality_or_calendar"
+    THIRD_PARTY_OUTAGE = "third_party_outage"
+    MARKET_OR_COMPETITOR = "market_or_competitor"
+    GRADUAL_OR_COHORT_EFFECT = "gradual_or_cohort_effect"
+    DENOMINATOR_EFFECT = "denominator_effect"
+    NATURAL_VARIATION = "natural_variation"
+    MULTIPLE_CAUSES = "multiple_causes"
+    # Placeholders (legacy `other` / `external_factor`); never SUPPORTED directly.
+    UNSPECIFIED = "unspecified"
+    EXTERNAL_UNSPECIFIED = "external_unspecified"
+
+
+# Only unambiguous legacy names are migrated. `other` and `external_factor` deliberately do
+# NOT map to natural_variation / third_party_outage: those are specific claims.
+LEGACY_CATEGORY_ALIASES = {
+    "product_regression": HypothesisCategory.CODE_REGRESSION,
+    "tracking_failure": HypothesisCategory.TRACKING_LOSS,
+    "acquisition_shift": HypothesisCategory.TRAFFIC_MIX_SHIFT,
+    "pricing_change": HypothesisCategory.PRICING_OR_POLICY_CHANGE,
+    "user_behavior": HypothesisCategory.GRADUAL_OR_COHORT_EFFECT,
+    "other": HypothesisCategory.UNSPECIFIED,
+    "external_factor": HypothesisCategory.EXTERNAL_UNSPECIFIED,
+}
+
+PLACEHOLDER_CATEGORIES = frozenset({HypothesisCategory.UNSPECIFIED, HypothesisCategory.EXTERNAL_UNSPECIFIED})
+
+
+def normalize_category(raw: str) -> HypothesisCategory:
+    """Map a raw/legacy category string to a HypothesisCategory; unknown values become UNSPECIFIED."""
+    clean = (raw or "").strip().lower()
+    try:
+        return HypothesisCategory(clean)
+    except ValueError:
+        return LEGACY_CATEGORY_ALIASES.get(clean, HypothesisCategory.UNSPECIFIED)
