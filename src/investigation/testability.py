@@ -29,7 +29,7 @@ CATEGORY_REQUIREMENTS: Dict[C, CategoryRequirement] = {
     C.CONFIG_OR_FLAG_CHANGE: CategoryRequirement(("config_change_log",), "configuration and feature-flag change audit log"),
     C.PERFORMANCE_DEGRADATION: CategoryRequirement(("latency_metrics",), "page/API latency and error-rate logs (p50/p95)"),
     C.PRICING_OR_POLICY_CHANGE: CategoryRequirement(("pricing_change_log",), "pricing and policy change log"),
-    C.TRAFFIC_MIX_SHIFT: CategoryRequirement(("segment_comparison",), "user acquisition and segment attributes"),
+    C.TRAFFIC_MIX_SHIFT: CategoryRequirement(("mix_decomposition",), "user acquisition and segment attributes"),
     C.BOT_OR_INVALID_TRAFFIC: CategoryRequirement(("bot_traffic_flags",), "bot / invalid-traffic classification (user agent, IP reputation, traffic-source validity flags)"),
     C.TRACKING_LOSS: CategoryRequirement(("telemetry_vs_backend_reconciliation",), "client telemetry and backend order records"),
     C.PIPELINE_OR_DEFINITION_CHANGE: CategoryRequirement(("pipeline_run_log",), "ETL/pipeline run log and metric-definition change history"),
@@ -37,7 +37,7 @@ CATEGORY_REQUIREMENTS: Dict[C, CategoryRequirement] = {
     C.THIRD_PARTY_OUTAGE: CategoryRequirement(("failure_reason_breakdown", "time_series"), "order failure reasons over time"),
     C.MARKET_OR_COMPETITOR: CategoryRequirement(("external_market_data",), "external market, competitor and campaign data"),
     C.GRADUAL_OR_COHORT_EFFECT: CategoryRequirement(("cohort_retention",), "user signup cohorts with long-run activity"),
-    C.DENOMINATOR_EFFECT: CategoryRequirement(("funnel_conversion", "segment_comparison"), "funnel and segment data"),
+    C.DENOMINATOR_EFFECT: CategoryRequirement(("funnel_conversion", "mix_decomposition"), "funnel and segment data"),
     C.NATURAL_VARIATION: CategoryRequirement(("time_series",), "daily history of the metric"),
     C.MULTIPLE_CAUSES: CategoryRequirement(ineligible_reason=(
         "composite: expressed by a conclusion with two or more supported causes, never supported directly")),
@@ -47,6 +47,15 @@ CATEGORY_REQUIREMENTS: Dict[C, CategoryRequirement] = {
         "placeholder category: refine it into a specific external cause (e.g. third_party_outage, "
         "market_or_competitor, seasonality_or_calendar) before it can be tested or supported")),
 }
+
+
+# Categories whose underlying cause the available tools can measure directly. Everything else is only ever
+# "consistent with" the evidence: tools can show a pattern but cannot confirm the external/causal mechanism.
+CONFIRMABLE_CATEGORIES = frozenset({C.TRACKING_LOSS.value, C.TRAFFIC_MIX_SHIFT.value, C.DENOMINATOR_EFFECT.value})
+
+
+def attribution_strength(category: str) -> str:
+    return "confirmed" if category in CONFIRMABLE_CATEGORIES else "consistent_with"
 
 
 @dataclass

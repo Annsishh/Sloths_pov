@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from analytics.models import TimeWindow
+from analytics.models import AnalysisResult, AnalysisStatus, TimeWindow
 from investigation import (
     ConfidenceLevel,
     EvidenceStance,
@@ -17,6 +17,7 @@ from investigation import (
     SupportPolicy,
 )
 from investigation import models as M
+from investigation.models import window_to_dict
 
 EVIDENCE_WINDOW = TimeWindow.from_iso("2026-09-10T06:30:00+00:00", "2026-09-17T18:45:00+00:00")
 
@@ -32,12 +33,19 @@ def _full_state() -> InvestigationState:
     state.add_hypothesis("Safari tracking loss", "Events dropped on Safari.", "tracking_failure", "hyp_a")
     state.add_hypothesis("Mobile regression", "Release broke mobile checkout.", "product_regression", "hyp_b")
     for i, (op, p) in enumerate([("tracking_gap_check", 0.0001), ("event_volume_check", None)]):
+        result = AnalysisResult(
+            request_id=f"req_{i}", operation=op, status=AnalysisStatus.OK, data={"rows": 2},
+            metadata={
+                "p_values": {"seg_a": 0.001, "seg_b": 0.2} if p else {}, "p_value": p, "mde": 0.01 if p else None,
+                "effect_estimate": {"value": -0.05, "method": "m", "se": 0.01, "ci_lower": -0.07, "ci_upper": -0.03,
+                                    "window": window_to_dict(EVIDENCE_WINDOW), "metric": "conv"} if i == 0 else None,
+            },
+            limitations=["lim"],
+        )
         state.record_evidence(
-            finding=f"finding {i}", source_tables=["orders", "events"], operation=op,
-            analysis_request_id=f"req_{i}", population={"browser": "Safari"}, window=EVIDENCE_WINDOW,
-            result_summary={"rows": 2, "metric_values": [0.1, 0.2]}, limitations=["lim"],
+            finding=f"finding {i}", source_tables=["orders", "events"], analysis_result=result,
+            population={"browser": "Safari"}, window=EVIDENCE_WINDOW,
             inference_type=InferenceType.MEASUREMENT_ARTIFACT, evidence_id=f"ev_{i}",
-            p_value=p, estimated_effect=-0.05 if i == 0 else None,
         )
         state.link_evidence(f"ev_{i}", "hyp_a", EvidenceStance.SUPPORTS, "supports it")
     state.link_evidence("ev_0", "hyp_b", EvidenceStance.CONTRADICTS, "refutes it")
@@ -76,6 +84,7 @@ def test_fixture_populates_every_field_of_every_model():
         *inv.unresolved_questions.values(), *inv.history,
         *[t for h in inv.hypotheses.values() for t in h.history],
         *inv.conclusion.supported_causes, *inv.conclusion.ruled_out,
+        *[e.effect_estimate for e in inv.evidence_store.values() if e.effect_estimate],
     ]
     # fields legitimately empty for some instances of a class; require that SOME instance populates them
     seen = {}

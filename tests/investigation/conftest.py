@@ -2,7 +2,7 @@
 
 import pytest
 
-from analytics.models import TimeWindow
+from analytics.models import AnalysisResult, AnalysisStatus, TimeWindow
 from investigation import EvidenceStance, InvestigationState, Observation, SupportPolicy
 
 
@@ -23,10 +23,28 @@ def make_state(observation):
     return _make
 
 
-def add_support(state, hyp_id, ev_id, operation, p_value=None, effect=None, stance=EvidenceStance.SUPPORTS):
-    """Record one evidence item and link it to a hypothesis."""
+def tool_result(operation, req_id, p_value=None, p_values=None, effect=None, se=0.005, method="test_method", mde=None):
+    """An AnalysisResult as a deterministic tool would return it (the only source of p-values/effects/MDE)."""
+    meta = {}
+    if p_value is not None:
+        meta["p_value"] = p_value
+    if p_values:
+        meta["p_values"] = p_values
+    if mde is not None:
+        meta["mde"] = mde
+    if effect is not None:
+        meta["effect_estimate"] = {
+            "value": effect, "method": method, "se": se,
+            "window": {"start": "2026-09-10T00:00:00+00:00", "end": "2026-09-20T00:00:00+00:00"},
+        }
+    return AnalysisResult(request_id=req_id, operation=operation, status=AnalysisStatus.OK, data={}, metadata=meta)
+
+
+def add_support(state, hyp_id, ev_id, operation, p_value=None, effect=None, stance=EvidenceStance.SUPPORTS,
+                p_values=None, mde=None, se=0.005, method="test_method"):
+    """Record one tool-produced evidence item and link it to a hypothesis."""
+    result = tool_result(operation, f"req_{ev_id}", p_value, p_values, effect, se, method, mde)
     state.record_evidence(
-        finding=f"finding {ev_id}", source_tables=["orders"], operation=operation,
-        analysis_request_id=f"req_{ev_id}", evidence_id=ev_id, p_value=p_value, estimated_effect=effect,
+        finding=f"finding {ev_id}", source_tables=["orders"], analysis_result=result, evidence_id=ev_id,
     )
     state.link_evidence(ev_id, hyp_id, stance, f"rationale for {ev_id}")

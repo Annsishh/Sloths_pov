@@ -13,9 +13,9 @@ from investigation import (
 from conftest import add_support
 
 
-def _supported(state, hid, category, ops, effect, p=0.0001):
+def _supported(state, hid, category, ops, effect, p=0.0001, method="test_method"):
     state.add_hypothesis(f"Cause {hid}", "A plausible mechanism for the drop.", category, hid)
-    add_support(state, hid, f"{hid}_1", ops[0], p_value=p, effect=effect)
+    add_support(state, hid, f"{hid}_1", ops[0], p_value=p, effect=effect, method=method)
     add_support(state, hid, f"{hid}_2", ops[1])
     state.update_hypothesis_status(hid, HypothesisStatus.SUPPORTED, "rule met", f"{hid}_1")
 
@@ -42,12 +42,11 @@ def test_two_causes_with_hand_computed_shares_and_remainder(make_state):
     assert shares["a"].basis_evidence_ids == ["a_1"]
 
 
-def test_explicit_estimates_override_evidence_estimates(make_state):
-    s = make_state()
-    _supported(s, "a", "tracking_failure", ["tracking_gap_check", "event_volume_check"], effect=-0.01)
-    c = _conclude(s, ["a"], explained_changes={"a": -0.035})
-    assert c.supported_causes[0].share == pytest.approx(0.5)
-    assert c.unexplained_share == pytest.approx(0.5)
+def test_conclude_has_no_way_to_inject_explained_changes(make_state):
+    """Shares come only from tool estimates: conclude() takes no caller-supplied numbers."""
+    import inspect
+    assert "explained_changes" not in inspect.signature(make_state().conclude).parameters
+    assert "estimated_effect" not in inspect.signature(make_state().record_evidence).parameters
 
 
 def test_unquantified_cause_is_reported_not_guessed(make_state):
@@ -78,21 +77,53 @@ def test_opposite_direction_cause_is_flagged(make_state):
     assert any("opposite" in w for w in c.warnings)
 
 
-def test_mean_of_multiple_evidence_estimates(make_state):
+def test_most_precise_estimate_is_used_and_method_se_window_recorded(make_state):
     s = make_state()
     s.add_hypothesis("Cause", "A plausible mechanism for the drop.", "tracking_failure", "a")
-    add_support(s, "a", "a_1", "tracking_gap_check", p_value=0.0001, effect=-0.02)
-    add_support(s, "a", "a_2", "event_volume_check", effect=-0.04)
+    add_support(s, "a", "a_1", "tracking_gap_check", p_value=0.0001, effect=-0.02, se=0.010, method="m_coarse")
+    add_support(s, "a", "a_2", "event_volume_check", effect=-0.04, se=0.002, method="m_precise")
     s.update_hypothesis_status("a", HypothesisStatus.SUPPORTED, "rule met", "a_1")
     c = _conclude(s, ["a"])
-    assert c.supported_causes[0].estimated_change == pytest.approx(-0.03)
-    assert sorted(c.supported_causes[0].basis_evidence_ids) == ["a_1", "a_2"]
+    cause = c.supported_causes[0]
+    assert cause.estimated_change == pytest.approx(-0.04)
+    assert (cause.method, cause.se) == ("m_precise", 0.002)
+    assert cause.window is not None and cause.window.start.isoformat().startswith("2026-09-10")
+    assert cause.basis_evidence_ids == ["a_2"]
+
+
+def test_estimates_from_different_methods_flag_possible_double_counting(make_state):
+    s = make_state()
+    _supported(s, "a", "tracking_failure", ["tracking_gap_check", "event_volume_check"], effect=-0.03, method="method_x")
+    _supported(s, "b", "product_regression", ["release_impact", "time_series"], effect=-0.02, method="method_y")
+    c = _conclude(s, ["a", "b"])
+    assert any("double counting" in w for w in c.warnings)
+
+
+def test_same_method_does_not_flag_double_counting(make_state):
+    s = make_state()
+    _supported(s, "a", "tracking_failure", ["tracking_gap_check", "event_volume_check"], effect=-0.03, method="same")
+    _supported(s, "b", "product_regression", ["release_impact", "time_series"], effect=-0.02, method="same")
+    assert not any("double counting" in w for w in _conclude(s, ["a", "b"]).warnings)
+
+
+def test_conclusion_wording_is_hedged_unless_the_tools_can_confirm(make_state):
+    s = make_state()
+    _supported(s, "trk", "tracking_failure", ["tracking_gap_check", "event_volume_check"], effect=-0.035)
+    _supported(s, "ext", "third_party_outage", ["error_analysis", "time_series"], effect=-0.02)
+    c = _conclude(s, ["trk", "ext"])
+    by = {x.hypothesis_id: x for x in c.supported_causes}
+    assert by["trk"].attribution == "confirmed" and by["ext"].attribution == "consistent_with"
+    assert "consistent with" in by["ext"].statement and "cannot confirm" in by["ext"].statement
+    assert "consistent with" not in by["trk"].statement
+    assert "method test_method" in by["ext"].statement and "SE" in by["ext"].statement
+    assert c.statements == [x.statement for x in c.supported_causes]
+    assert c.tests_in_family == 2 and c.fdr_alpha == 0.05
 
 
 def test_natural_variation_attributes_the_whole_change_to_noise(make_state):
     s = make_state()
     s.add_hypothesis("Just noise", "The change is within normal variation.", "natural_variation", "nv")
-    add_support(s, "nv", "n1", "time_series", p_value=0.7)
+    add_support(s, "nv", "n1", "time_series", p_value=0.7, mde=0.02)
     add_support(s, "nv", "n2", "period_comparison")
     s.update_hypothesis_status("nv", HypothesisStatus.SUPPORTED, "rule met", "n1")
     c = _conclude(s, ["nv"])

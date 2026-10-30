@@ -7,7 +7,7 @@ from scipy import stats
 from analytics.data_quality import tracking_gap_check
 from analytics.models import AnalysisRequest, TimeWindow
 from analytics.statistical import compare_proportions
-from investigation.models import extract_p_value
+from investigation.models import extract_tests
 
 WINDOW = TimeWindow.from_iso("2026-09-10T00:00:00Z", "2026-09-11T00:00:00Z")
 T0 = pd.Timestamp("2026-09-10T10:00:00Z")
@@ -33,7 +33,7 @@ def _run(captured, breakdown=("browser",)):
     return tracking_gap_check(events, orders, users, req)
 
 
-def test_pvalue_matches_hand_computed_segment_vs_rest_with_bonferroni():
+def test_tool_returns_raw_per_segment_pvalues_with_no_internal_correction():
     # Safari: 10/20 orders matched; Chrome: 20/20. Each segment is compared with the rest (2 tests).
     # pooled p = 30/40 = 0.75 ; se = sqrt(0.75*0.25*(1/20+1/20)) = 0.136931 ; z = -0.5/se = -3.6515
     # p = 2*(1 - Phi(3.6515)) = 2.607e-4
@@ -43,20 +43,24 @@ def test_pvalue_matches_hand_computed_segment_vs_rest_with_bonferroni():
     expected_row = 2 * stats.norm.sf(abs(z))
     assert expected_row == pytest.approx(2.607e-4, abs=2e-7)
     assert res.data["p_value"].tolist() == pytest.approx([expected_row] * 2, abs=1e-6)  # rows are rounded to 6 dp
-    assert res.metadata["p_value"] == pytest.approx(2 * expected_row, abs=2e-6)         # Bonferroni across 2 segments
-    assert extract_p_value(res) == res.metadata["p_value"]
+    # Raw per-segment p-values, labelled; NO Bonferroni (or any) correction inside the tool.
+    assert "p_value" not in res.metadata
+    assert set(res.metadata["p_values"]) == {"capture_rate[browser=Chrome]", "capture_rate[browser=Safari]"}
+    for v in res.metadata["p_values"].values():
+        assert v == pytest.approx(expected_row, abs=1e-6)
+    assert extract_tests(res) == res.metadata["p_values"]
 
 
 def test_healthy_tracking_gives_a_large_pvalue():
     res = _run({"Safari": (30, 30), "Chrome": (30, 30)})
-    assert res.metadata["p_value"] == pytest.approx(1.0)
+    assert all(v == pytest.approx(1.0) for v in res.metadata["p_values"].values())
 
 
 def test_single_segment_has_no_pvalue():
     res = _run({"Safari": (10, 0)})
-    assert res.metadata["p_value"] is None
+    assert res.metadata["p_values"] == {}
     assert "p_value" not in res.data.columns
-    assert extract_p_value(res) is None
+    assert extract_tests(res) == {}
 
 
 def test_segment_with_no_orders_is_skipped_not_crashed():
@@ -68,4 +72,5 @@ def test_segment_with_no_orders_is_skipped_not_crashed():
     res = tracking_gap_check(events, orders, users, req)
     firefox = res.data[res.data["browser"] == "Firefox"].iloc[0]
     assert pd.isna(firefox["p_value"])
-    assert 0.0 <= res.metadata["p_value"] <= 1.0
+    assert all(0.0 <= v <= 1.0 for v in res.metadata["p_values"].values())
+    assert not any("Firefox" in k for k in res.metadata["p_values"])

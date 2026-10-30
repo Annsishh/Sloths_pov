@@ -187,8 +187,9 @@ class InvestigationController:
         """Construct an AnalysisRequest from the decision and execute via AnalyticsExecutor."""
         obs = state.investigation.observation
 
-        # Select window
-        if decision.comparison_window_needed:
+        # Select window (period-comparison operations always get the baseline window)
+        spec = CONTROLLED_OPERATIONS.get(decision.operation.strip().lower())
+        if decision.comparison_window_needed or (spec is not None and spec.needs_comparison_window):
             win = obs.comparison_window
             comp_win = obs.baseline_window
         else:
@@ -206,6 +207,8 @@ class InvestigationController:
 
         self.analyses_executed_count += 1
         result = self.executor.run(request)
+        # Every test the tool ran joins the BH family now, whether or not it is later interpreted.
+        state.register_analysis_result(result)
 
         state._record_event(
             event_type=HistoryEventType.ANALYSIS_DISPATCHED,
@@ -312,13 +315,7 @@ class InvestigationController:
                         triggered_by_evidence_id=ev.evidence_id,
                     )
         # Re-evaluate everything: adjusted p-values shift as tests accumulate.
-        for demoted in state.reassess_supported():
-            state._record_event(
-                event_type=HistoryEventType.DIRECTION_CHANGED,
-                title="Support Withdrawn",
-                description=f"Hypothesis '{demoted}' no longer satisfies the support rule after new evidence.",
-                metadata={"hypothesis_id": demoted},
-            )
+        state.reassess_supported()  # logs a SUPPORT_WITHDRAWN audit event with before/after adjusted p-values
         llm_wanted_support = bool(interp.recommended_hypothesis_status
                                   and interp.recommended_hypothesis_status.strip().lower() == "supported")
         if hyp.status in (HypothesisStatus.PROPOSED, HypothesisStatus.ACTIVE):
@@ -401,7 +398,7 @@ class InvestigationController:
             return False
         titles = "; ".join(state.investigation.hypotheses[i].title for i in supported_ids)
         state.conclude(
-            conclusion_summary=f"Supported by deterministic evidence rule: {titles}.",
+            conclusion_summary=f"The evidence is consistent with: {titles} (support rule satisfied; see conclusion statements for what tools can confirm).",
             supported_hypothesis_id=supported_ids[0],
             confidence_level=ConfidenceLevel.MEDIUM,
             confidence_justification="Support rule satisfied (multiple independent significant analyses, no refuting evidence).",

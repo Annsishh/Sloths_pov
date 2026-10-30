@@ -182,7 +182,7 @@ def test_untestable_category_cannot_be_supported_even_with_evidence_attached(mak
 def test_natural_variation_needs_non_significant_evidence(make_state):
     s = make_state()
     _hyp(s, "nv", "natural_variation")
-    add_support(s, "nv", "e1", "time_series", p_value=0.60)
+    add_support(s, "nv", "e1", "time_series", p_value=0.60, mde=0.02)   # limit = 1.0 * |-0.07|
     add_support(s, "nv", "e2", "period_comparison")
     assert s.evaluate_support("nv").eligible
 
@@ -202,7 +202,7 @@ def test_natural_variation_excludes_and_is_excluded_by_real_causes(make_state):
     s.update_hypothesis_status("cause", HypothesisStatus.SUPPORTED, "rule met", "c1")
 
     _hyp(s, "nv", "natural_variation")
-    add_support(s, "nv", "n1", "time_series", p_value=0.8)
+    add_support(s, "nv", "n1", "time_series", p_value=0.8, mde=0.02)
     add_support(s, "nv", "n2", "period_comparison")
     d = s.evaluate_support("nv")
     assert not d.eligible and any("alongside supported cause" in r for r in d.reasons)

@@ -73,6 +73,8 @@ class HistoryEventType(str, Enum):
     QUESTION_ANSWERED = "question_answered"
     INVESTIGATION_CONCLUDED = "investigation_concluded"
     INVESTIGATION_STOPPED = "investigation_stopped"
+    SUPPORT_WITHDRAWN = "support_withdrawn"
+    WARNING = "warning"
 
 
 class HypothesisCategory(str, Enum):

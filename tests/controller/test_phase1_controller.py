@@ -173,5 +173,6 @@ def test_evidence_source_tables_come_from_the_catalogue(executor, obs):
 def test_proposal_categories_are_normalized_by_the_schema():
     p = HypothesisProposal(title="Some hypothesis", explanation="A plausible explanation text.", category="Tracking_Failure")
     assert p.category == "tracking_loss"
-    assert HypothesisProposal(title="Some hypothesis", explanation="A plausible explanation text.", category="nonsense").category == "unspecified"
+    # Unknown names are kept so the investigation state can coerce AND log a warning (see test_audit_events).
+    assert HypothesisProposal(title="Some hypothesis", explanation="A plausible explanation text.", category="nonsense").category == "nonsense"
     assert HypothesisProposal(title="Some hypothesis", explanation="A plausible explanation text.").category == "unspecified"

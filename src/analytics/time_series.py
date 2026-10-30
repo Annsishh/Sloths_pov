@@ -310,6 +310,38 @@ def compare_periods(
     result_df = pd.DataFrame([base_stats, comp_stats, delta_stats])
     result_df["relative_change"] = [None, None, rel_change]
 
+    # Correct test per aggregation: z-test for rates, Welch for means. Counts/sums have no valid test here.
+    p_values: Dict[str, float] = {}
+    mde = None
+    warnings: List[str] = []
+    try:
+        from analytics.statistical import compare_means, compare_proportions
+        def _scoped(window):
+            sc = apply_time_filter(primary_df, time_column, window)
+            need = [c for c in request.filters if c in users_df.columns]
+            if need:
+                sc = enrich_with_user_attrs(sc, users_df, need)
+            return apply_filters(sc, request.filters)
+        if aggregation == "rate":
+            b_s, c_s = _scoped(request.comparison_window), _scoped(request.window)
+            if len(b_s) > 0 and len(c_s) > 0:
+                r = compare_proportions(int((c_s[metric_column] == metric_value).sum()), len(c_s),
+                                        int((b_s[metric_column] == metric_value).sum()), len(b_s))
+                p_values["rate_change"], mde = r["p_value"], r["mde_80pct_power"]
+                warnings += r["warnings"]
+        elif aggregation == "mean" and metric_column:
+            b_s, c_s = _scoped(request.comparison_window), _scoped(request.window)
+            if len(b_s) > 1 and len(c_s) > 1:
+                r = compare_means(c_s[metric_column], b_s[metric_column])
+                if r["p_value"] is not None:
+                    p_values["mean_change"] = r["p_value"]
+                mde = r["mde_80pct_power"]
+                warnings += r["warnings"]
+        elif aggregation in ("count", "sum"):
+            warnings.append("No significance test is computed for counts/sums (volume depends on window length and traffic).")
+    except Exception as e:  # a failed side-test must never break the comparison itself
+        warnings.append(f"Significance test skipped: {e}")
+
     return AnalysisResult(
         request_id=request.request_id,
         operation="period_comparison",
@@ -323,7 +355,9 @@ def compare_periods(
             "metric_value": metric_value,
             "absolute_change": abs_change,
             "relative_change": rel_change,
+            "p_values": p_values,
+            "mde": mde,
         },
         limitations=[],
-        warnings=[],
+        warnings=warnings,
     )

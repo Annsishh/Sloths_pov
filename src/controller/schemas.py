@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from investigation.enums import HypothesisCategory, normalize_category
+
+
+FORBIDDEN_MODEL_KEYS = frozenset({
+    "estimated_effect", "effect_estimate", "explained_share", "explained_change", "share", "estimated_change",
+})
 
 
 class HypothesisProposal(BaseModel):
@@ -28,8 +33,13 @@ class HypothesisProposal(BaseModel):
     @field_validator("category")
     @classmethod
     def validate_category(cls, v: str) -> str:
-        """Normalise to a HypothesisCategory; legacy names are migrated, unknown values become 'unspecified'."""
-        return normalize_category(v).value
+        """Known and legacy names are normalised. Unknown names are kept (lower-cased) so that the investigation
+        state can coerce them to 'unspecified' AND log a warning audit event; coercing here would hide it."""
+        clean = (v or "").strip().lower()
+        norm = normalize_category(clean)
+        if norm == HypothesisCategory.UNSPECIFIED and clean not in ("unspecified", "other", ""):
+            return clean
+        return norm.value
 
 
 class HypothesesGenerationOutput(BaseModel):
@@ -117,6 +127,19 @@ class EvidenceInterpretation(BaseModel):
         default=None,
         description="Explicit explanation of confidence level, addressed alternatives, and remaining limitations"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_model_supplied_effects(cls, data: Any) -> Any:
+        """Effect estimates / explained shares may come only from deterministic tools, never from the model."""
+        if isinstance(data, dict):
+            bad = sorted(k for k in data if k in FORBIDDEN_MODEL_KEYS)
+            if bad:
+                raise ValueError(
+                    f"LLM output may not set {bad}: effect estimates and explained shares come only from "
+                    "deterministic analysis tools."
+                )
+        return data
 
     @field_validator("stance")
     @classmethod

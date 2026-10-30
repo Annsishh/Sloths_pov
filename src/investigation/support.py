@@ -5,10 +5,13 @@ The LLM may *recommend* a status; this module decides. Defaults:
   * at least `min_supporting_evidence` supporting items, from at least `min_distinct_analyses`
     different analysis operations;
   * at most `max_contradicting_evidence` contradicting items (default zero);
-  * at least `min_significant_supporting` supporting items significant after
-    Benjamini–Hochberg correction across every test in the investigation (alpha configurable).
-`natural_variation` is the mirror image: it needs p-valued evidence that is NOT significant,
-and it excludes (and is excluded by) any other supported cause.
+  * at least `min_significant_supporting` supporting items with a test significant at `alpha`
+    after Benjamini–Hochberg correction across EVERY test registered in the investigation
+    (`Investigation.test_registry`, including tests whose results were never interpreted).
+`natural_variation` is the mirror image: it needs p-valued evidence that is NOT significant AND
+adequately powered (the test's minimum detectable effect must be <= `nv_max_mde_ratio` x the
+observed change); an underpowered non-significant result is inconclusive, not support. It also
+excludes (and is excluded by) any other supported cause.
 All thresholds live in SupportPolicy so they can be configured per run.
 """
 
@@ -36,12 +39,16 @@ class SupportPolicy:
     min_significant_supporting: int = 1
     alpha: float = 0.05
     correction: str = "bh"  # "bh" | "none"
+    # natural_variation only: a non-significant test counts as support only if its MDE <= ratio * |observed change|.
+    nv_max_mde_ratio: float = 1.0
 
     def __post_init__(self) -> None:
         if self.correction not in ("bh", "none"):
             raise ValueError("correction must be 'bh' or 'none'")
         if not 0.0 < self.alpha < 1.0:
             raise ValueError("alpha must be in (0, 1)")
+        if self.nv_max_mde_ratio <= 0:
+            raise ValueError("nv_max_mde_ratio must be positive")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -59,14 +66,31 @@ class SupportDecision:
     needs_more_evidence: bool = False  # True when the only blockers are evidence thresholds
 
 
-def adjusted_p_values(investigation: Investigation, policy: SupportPolicy) -> Dict[str, float]:
-    """evidence_id -> adjusted p-value over every p-valued evidence item in the investigation."""
-    items = [(e.evidence_id, e.p_value) for e in investigation.evidence_store.values() if e.p_value is not None]
-    if not items:
+def evidence_test_keys(e: Evidence) -> List[str]:
+    """Registry keys for an evidence item's tests (shared with the analysis result that produced it)."""
+    src = e.analysis_request_id or e.evidence_id
+    return [f"{src}|{label}" for label in e.all_tests()]
+
+
+def adjusted_test_p_values(investigation: Investigation, policy: SupportPolicy) -> Dict[str, float]:
+    """registry key -> adjusted p-value over the whole investigation-wide family."""
+    keys = list(investigation.test_registry)
+    if not keys:
         return {}
-    ps = [p for _, p in items]
+    ps = [investigation.test_registry[k] for k in keys]
     adj = benjamini_hochberg(ps) if policy.correction == "bh" else ps
-    return {eid: q for (eid, _), q in zip(items, adj)}
+    return dict(zip(keys, adj))
+
+
+def adjusted_p_values(investigation: Investigation, policy: SupportPolicy) -> Dict[str, float]:
+    """evidence_id -> smallest adjusted p-value among that evidence's registered tests."""
+    per_test = adjusted_test_p_values(investigation, policy)
+    out: Dict[str, float] = {}
+    for e in investigation.evidence_store.values():
+        qs = [per_test[k] for k in evidence_test_keys(e) if k in per_test]
+        if qs:
+            out[e.evidence_id] = min(qs)
+    return out
 
 
 def evaluate_support(
@@ -106,10 +130,18 @@ def evaluate_support(
 
     p_valued = [e for e in supporting if e.evidence_id in adj]
     if cat == HypothesisCategory.NATURAL_VARIATION:
-        if not p_valued:
-            soft.append("natural_variation needs at least one p-valued supporting analysis showing the change is not significant")
-        elif any(adj[e.evidence_id] < policy.alpha for e in p_valued):
+        total = abs(investigation.observation.absolute_change)
+        limit = policy.nv_max_mde_ratio * total
+        powered = [e for e in p_valued if e.mde is not None and e.mde <= limit]
+        underpowered = [e.evidence_id for e in p_valued if e.mde is None or e.mde > limit]
+        if any(adj[e.evidence_id] < policy.alpha for e in p_valued):
             reasons.append("a supporting analysis shows a statistically significant change, which contradicts natural variation")
+        if not powered:
+            msg = ("natural_variation needs at least one non-significant test with adequate power "
+                   f"(MDE <= {limit:.4g}, i.e. {policy.nv_max_mde_ratio:g} x the observed change)")
+            if underpowered:
+                msg += f"; underpowered or MDE-less result(s) are inconclusive, not support: {underpowered}"
+            soft.append(msg)
         others = [h.hypothesis_id for h in investigation.hypotheses.values()
                   if h.hypothesis_id != hypothesis_id and h.status == HypothesisStatus.SUPPORTED]
         if others:

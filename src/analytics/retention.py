@@ -289,6 +289,15 @@ def compare_retention(
 
     result_df = pd.DataFrame([b_summary, c_summary, delta_row])
 
+    # Raw two-proportion z-tests per retention horizon (corrected once, investigation-wide).
+    from analytics.statistical import compare_proportions
+    p_values: Dict[str, float] = {}
+    for day_n in retention_days:
+        n_b, k_b = b_summary.get(f"eligible_d{day_n}", 0), b_summary.get(f"retained_d{day_n}", 0)
+        n_c, k_c = c_summary.get(f"eligible_d{day_n}", 0), c_summary.get(f"retained_d{day_n}", 0)
+        if n_b > 0 and n_c > 0:
+            p_values[f"retention_d{day_n}"] = compare_proportions(k_c, n_c, k_b, n_b)["p_value"]
+
     return AnalysisResult(
         request_id=request.request_id,
         operation="retention_comparison",
@@ -299,6 +308,7 @@ def compare_retention(
             "comparison_window": str(request.window),
             "retention_days": retention_days,
             "cohort_period": request.params.get("cohort_period", "week"),
+            "p_values": p_values,
         },
         limitations=baseline_res.limitations + comp_res.limitations,
         warnings=baseline_res.warnings + comp_res.warnings,

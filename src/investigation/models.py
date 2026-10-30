@@ -51,17 +51,69 @@ def window_from_any(raw: Any) -> Optional[TimeWindow]:
     raise ValueError(f"Cannot parse time window from {raw!r}")
 
 
+@dataclass
+class EffectEstimate:
+    """A deterministic tool's estimate of how much of the observed metric change a cause accounts for.
+
+    Only analysis tools may produce these (via result.metadata['effect_estimate']); LLM output is rejected.
+    Every estimate carries its method, an uncertainty (SE and/or CI) and the window it applies to.
+    """
+    value: float                       # absolute change in the metric
+    method: str
+    window: TimeWindow
+    se: Optional[float] = None
+    ci_lower: Optional[float] = None
+    ci_upper: Optional[float] = None
+    metric: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.method or not self.method.strip():
+            raise ValueError("EffectEstimate requires a method.")
+        if self.window is None:
+            raise ValueError("EffectEstimate requires a window.")
+        if self.se is None and (self.ci_lower is None or self.ci_upper is None):
+            raise ValueError("EffectEstimate requires an uncertainty: se, or both ci_lower and ci_upper.")
+        if self.se is not None and self.se < 0:
+            raise ValueError("EffectEstimate se must be non-negative.")
+
+    def uncertainty_width(self) -> float:
+        """Comparable spread: se, else a CI-derived se. Used to pick the most precise estimate."""
+        if self.se is not None:
+            return self.se
+        return (self.ci_upper - self.ci_lower) / 3.92
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"value": self.value, "method": self.method, "window": window_to_dict(self.window),
+                "se": self.se, "ci_lower": self.ci_lower, "ci_upper": self.ci_upper, "metric": self.metric}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "EffectEstimate":
+        return cls(value=float(d["value"]), method=d.get("method", ""), window=window_from_any(d.get("window")),
+                   se=d.get("se"), ci_lower=d.get("ci_lower"), ci_upper=d.get("ci_upper"), metric=d.get("metric", ""))
+
+
+def extract_tests(result: AnalysisResult) -> Dict[str, float]:
+    """Labelled RAW p-values reported by a tool (metadata `p_values` dict and/or scalar `p_value`)."""
+    out: Dict[str, float] = {}
+    meta = result.metadata if isinstance(result.metadata, dict) else {}
+    for label, p in (meta.get("p_values") or {}).items():
+        if p is not None:
+            out[str(label)] = float(p)
+    if meta.get("p_value") is not None:
+        out.setdefault("overall", float(meta["p_value"]))
+    return out
+
+
+def extract_effect_estimate(result: AnalysisResult) -> Optional[EffectEstimate]:
+    meta = result.metadata if isinstance(result.metadata, dict) else {}
+    raw = meta.get("effect_estimate")
+    return EffectEstimate.from_dict(raw) if raw else None
+
+
 def extract_p_value(result: AnalysisResult) -> Optional[float]:
-    """Pull a p-value out of an analysis result (metadata first, then a `p_value` column)."""
+    """Scalar `p_value` from a tool's metadata, if it reports exactly one test that way."""
     meta = result.metadata.get("p_value") if isinstance(result.metadata, dict) else None
-    if meta is not None:
-        return float(meta)
-    data = result.data
-    if hasattr(data, "columns") and "p_value" in data.columns:
-        vals = data["p_value"].dropna()
-        if len(vals):
-            return float(vals.min())
-    return None
+    return float(meta) if meta is not None else None
 
 
 @dataclass
@@ -132,10 +184,22 @@ class Evidence:
     limitations: List[str] = field(default_factory=list)
     inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION
     recorded_at: datetime = field(default_factory=_utc_now)
-    # p-value of the statistical test behind this evidence, if any (feeds multiple-testing correction).
+    # Raw (uncorrected) p-value of a single test behind this evidence, if any.
     p_value: Optional[float] = None
-    # Absolute change in the observed metric this evidence attributes to its cause (feeds explained-share accounting).
-    estimated_effect: Optional[float] = None
+    # Labelled raw p-values when a tool runs several tests (e.g. one per segment); each joins the BH family.
+    p_values: Dict[str, float] = field(default_factory=dict)
+    # Smallest effect the tests could have detected (80% power), in the analysis metric's units.
+    mde: Optional[float] = None
+    # "computed" from data, or "caller_supplied" (unverifiable inputs; excluded from BH family and support).
+    p_value_provenance: str = "computed"
+    # Deterministic tool estimate of the share of the observed change this evidence explains.
+    effect_estimate: Optional[EffectEstimate] = None
+
+    def all_tests(self) -> Dict[str, float]:
+        out = dict(self.p_values)
+        if self.p_value is not None:
+            out.setdefault("overall", self.p_value)
+        return out
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -151,7 +215,10 @@ class Evidence:
             "inference_type": self.inference_type.value,
             "recorded_at": self.recorded_at.isoformat(),
             "p_value": self.p_value,
-            "estimated_effect": self.estimated_effect,
+            "p_values": dict(self.p_values),
+            "mde": self.mde,
+            "p_value_provenance": self.p_value_provenance,
+            "effect_estimate": self.effect_estimate.to_dict() if self.effect_estimate else None,
         }
 
     @classmethod
@@ -169,7 +236,10 @@ class Evidence:
             inference_type=InferenceType(d.get("inference_type", InferenceType.OBSERVATIONAL_CORRELATION.value)),
             recorded_at=datetime.fromisoformat(d["recorded_at"]),
             p_value=d.get("p_value"),
-            estimated_effect=d.get("estimated_effect"),
+            p_values=dict(d.get("p_values", {})),
+            mde=d.get("mde"),
+            p_value_provenance=d.get("p_value_provenance", "computed"),
+            effect_estimate=EffectEstimate.from_dict(d["effect_estimate"]) if d.get("effect_estimate") else None,
         )
 
     @classmethod
@@ -182,7 +252,6 @@ class Evidence:
         population: Optional[Dict[str, Any]] = None,
         window: Optional[TimeWindow] = None,
         inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION,
-        estimated_effect: Optional[float] = None,
     ) -> "Evidence":
         """Construct an Evidence item directly from a verified AnalysisResult."""
         summary_data: Dict[str, Any] = {}
@@ -207,7 +276,10 @@ class Evidence:
             inference_type=inference_type,
             recorded_at=_utc_now(),
             p_value=extract_p_value(result),
-            estimated_effect=estimated_effect,
+            p_values=extract_tests(result),
+            mde=(float(result.metadata["mde"]) if isinstance(result.metadata, dict) and result.metadata.get("mde") is not None else None),
+            p_value_provenance=(result.metadata.get("p_value_provenance", "computed") if isinstance(result.metadata, dict) else "computed"),
+            effect_estimate=extract_effect_estimate(result),
         )
 
 
@@ -273,6 +345,8 @@ class Hypothesis:
     history: List[HypothesisTransition] = field(default_factory=list)
     created_at: datetime = field(default_factory=_utc_now)
     updated_at: datetime = field(default_factory=_utc_now)
+    # BH-adjusted p-values of the supporting evidence at the moment SUPPORTED was granted (audit "before" values).
+    support_snapshot: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -286,6 +360,7 @@ class Hypothesis:
             "history": [t.to_dict() for t in self.history],
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "support_snapshot": dict(self.support_snapshot),
         }
 
 
@@ -367,16 +442,28 @@ class ExplainedShare:
     share: Optional[float]              # estimated_change / total observed change
     basis_evidence_ids: List[str] = field(default_factory=list)
     note: str = ""
+    attribution: str = "consistent_with"  # "confirmed" | "consistent_with"
+    method: str = ""
+    se: Optional[float] = None
+    ci_lower: Optional[float] = None
+    ci_upper: Optional[float] = None
+    window: Optional[TimeWindow] = None
+    statement: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {"hypothesis_id": self.hypothesis_id, "category": self.category,
                 "estimated_change": self.estimated_change, "share": self.share,
-                "basis_evidence_ids": list(self.basis_evidence_ids), "note": self.note}
+                "basis_evidence_ids": list(self.basis_evidence_ids), "note": self.note,
+                "attribution": self.attribution, "method": self.method, "se": self.se,
+                "ci_lower": self.ci_lower, "ci_upper": self.ci_upper,
+                "window": window_to_dict(self.window), "statement": self.statement}
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ExplainedShare":
         return cls(d["hypothesis_id"], d["category"], d.get("estimated_change"), d.get("share"),
-                   list(d.get("basis_evidence_ids", [])), d.get("note", ""))
+                   list(d.get("basis_evidence_ids", [])), d.get("note", ""), d.get("attribution", "consistent_with"),
+                   d.get("method", ""), d.get("se"), d.get("ci_lower"), d.get("ci_upper"),
+                   window_from_any(d.get("window")), d.get("statement", ""))
 
 
 @dataclass
@@ -429,6 +516,9 @@ class Conclusion:
     inconclusive_hypothesis_ids: List[str] = field(default_factory=list)
     data_requests: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    tests_in_family: int = 0                      # tests in the investigation-wide BH family
+    fdr_alpha: float = 0.05
+    statements: List[str] = field(default_factory=list)   # deterministic, hedged wording per supported cause
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -443,6 +533,9 @@ class Conclusion:
             "inconclusive_hypothesis_ids": list(self.inconclusive_hypothesis_ids),
             "data_requests": list(self.data_requests),
             "warnings": list(self.warnings),
+            "tests_in_family": self.tests_in_family,
+            "fdr_alpha": self.fdr_alpha,
+            "statements": list(self.statements),
         }
 
     @classmethod
@@ -459,6 +552,9 @@ class Conclusion:
             inconclusive_hypothesis_ids=list(d.get("inconclusive_hypothesis_ids", [])),
             data_requests=list(d.get("data_requests", [])),
             warnings=list(d.get("warnings", [])),
+            tests_in_family=d.get("tests_in_family", 0),
+            fdr_alpha=d.get("fdr_alpha", 0.05),
+            statements=list(d.get("statements", [])),
         )
 
 
@@ -486,6 +582,8 @@ class Investigation:
     conclusion: Optional[Conclusion] = None
     support_policy: Dict[str, Any] = field(default_factory=dict)
     testability: Dict[str, TestabilityAssessment] = field(default_factory=dict)
+    # Every statistical test run in this investigation, "<source>|<label>" -> raw p-value. This is the BH family.
+    test_registry: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -505,4 +603,5 @@ class Investigation:
             "conclusion": self.conclusion.to_dict() if self.conclusion else None,
             "support_policy": dict(self.support_policy),
             "testability": {k: v.to_dict() for k, v in self.testability.items()},
+            "test_registry": dict(self.test_registry),
         }

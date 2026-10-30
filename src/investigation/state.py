@@ -37,6 +37,8 @@ from investigation.models import (
     ExplainedShare,
     RuledOutHypothesis,
     UntestableHypothesis,
+    EffectEstimate,
+    extract_tests,
     window_to_dict,
     HistoryEvent,
     Hypothesis,
@@ -47,8 +49,15 @@ from investigation.models import (
     UnresolvedQuestion,
     _utc_now,
 )
-from investigation.support import SupportDecision, SupportPolicy, adjusted_p_values, evaluate_support
-from investigation.testability import TestabilityAssessment, assess_testability
+from investigation.support import (
+    SupportDecision,
+    SupportPolicy,
+    adjusted_p_values,
+    adjusted_test_p_values,
+    evaluate_support,
+    evidence_test_keys,
+)
+from investigation.testability import TestabilityAssessment, assess_testability, attribution_strength
 
 
 # Known privileged terms that must never leak from synthetic ground truth into the investigation state
@@ -86,8 +95,34 @@ class InvestigationState:
 
     @property
     def tests_run(self) -> int:
-        """Number of statistical tests (p-valued evidence items) in this investigation."""
-        return sum(1 for e in self.investigation.evidence_store.values() if e.p_value is not None)
+        """Size of the investigation-wide multiple-testing family (every registered test)."""
+        return len(self.investigation.test_registry)
+
+    def register_tests(self, source_id: str, tests: Dict[str, float], provenance: str = "computed") -> int:
+        """Add a tool's raw p-values to the BH family under `source_id`. Idempotent per (source, label).
+
+        Caller-supplied p-values (unverifiable inputs) are never registered.
+        """
+        if provenance != "computed":
+            return 0
+        added = 0
+        for label, p in tests.items():
+            if not 0.0 <= p <= 1.0:
+                raise ValueError(f"p-value for '{label}' must lie in [0, 1]; got {p}")
+            key = f"{source_id}|{label}"
+            if key not in self.investigation.test_registry:
+                self.investigation.test_registry[key] = float(p)
+                added += 1
+        return added
+
+    def register_analysis_result(self, result: AnalysisResult) -> int:
+        """Register a result's tests as soon as it is executed, even if it is never interpreted
+        (dropping unfavourable tests must not shrink the correction family)."""
+        meta = result.metadata if isinstance(result.metadata, dict) else {}
+        return self.register_tests(result.request_id, extract_tests(result), meta.get("p_value_provenance", "computed"))
+
+    def adjusted_test_p_values(self) -> Dict[str, float]:
+        return adjusted_test_p_values(self.investigation, self.policy)
 
     def adjusted_p_values(self) -> Dict[str, float]:
         return adjusted_p_values(self.investigation, self.policy)
@@ -159,6 +194,8 @@ class InvestigationState:
 
         now = _utc_now()
         norm_cat = normalize_category(category)
+        raw_clean = (category or "").strip().lower()
+        coerced = norm_cat == HypothesisCategory.UNSPECIFIED and raw_clean not in {"unspecified", "other"}
         hyp = Hypothesis(
             hypothesis_id=hyp_id,
             title=title.strip(),
@@ -182,6 +219,14 @@ class InvestigationState:
             description=explanation,
             metadata={"hypothesis_id": hyp_id, "category": norm_cat.value, "original_category": category.strip()},
         )
+        if coerced:
+            self._record_event(
+                event_type=HistoryEventType.WARNING,
+                title="Warning: unknown category coerced to 'unspecified'",
+                description=(f"Hypothesis '{hyp_id}' was proposed with unknown category '{category.strip()}'; "
+                             "it is stored as 'unspecified' and must be refined before it can be supported."),
+                metadata={"hypothesis_id": hyp_id, "original_category": category.strip(), "coerced_to": "unspecified"},
+            )
         return hyp
 
     def refine_category(self, hypothesis_id: str, new_category: str, reason: str) -> Hypothesis:
@@ -220,15 +265,33 @@ class InvestigationState:
 
     def reassess_supported(self) -> List[str]:
         """Demote SUPPORTED hypotheses that no longer satisfy the rule (e.g. BH-adjusted p-values
-        rise as more tests accumulate). Returns demoted hypothesis ids."""
+        rise as more tests accumulate). Every withdrawal is logged with before/after adjusted p-values."""
         demoted: List[str] = []
         for hid, hyp in list(self.investigation.hypotheses.items()):
-            if hyp.status == HypothesisStatus.SUPPORTED:
-                decision = self.evaluate_support(hid)
-                if not decision.eligible:
-                    self._set_status(hyp, HypothesisStatus.ACTIVE,
-                                     "Support rule no longer satisfied: " + "; ".join(decision.reasons), None)
-                    demoted.append(hid)
+            if hyp.status != HypothesisStatus.SUPPORTED:
+                continue
+            decision = self.evaluate_support(hid)
+            if decision.eligible:
+                continue
+            after_all = self.adjusted_p_values()
+            before = dict(hyp.support_snapshot)
+            after = {e: after_all[e] for e in hyp.supporting_evidence_ids if e in after_all}
+            reason = "Support rule no longer satisfied: " + "; ".join(decision.reasons)
+            self._set_status(hyp, HypothesisStatus.ACTIVE, reason, None)
+            self._record_event(
+                event_type=HistoryEventType.SUPPORT_WITHDRAWN,
+                title=f"Support Withdrawn: {hyp.title}",
+                description=reason,
+                metadata={
+                    "hypothesis_id": hid,
+                    "adjusted_p_before": before,
+                    "adjusted_p_after": after,
+                    "tests_in_family": self.tests_run,
+                    "alpha": self.policy.alpha,
+                    "reasons": list(decision.reasons),
+                },
+            )
+            demoted.append(hid)
         return demoted
 
     def update_hypothesis_status(
@@ -277,6 +340,9 @@ class InvestigationState:
         )
         hyp.history.append(transition)
         hyp.status = new_status
+        if new_status == HypothesisStatus.SUPPORTED:
+            adj = self.adjusted_p_values()
+            hyp.support_snapshot = {e: adj[e] for e in hyp.supporting_evidence_ids if e in adj}
         hyp.updated_at = now
         self.investigation.updated_at = now
         self._record_event(
@@ -306,7 +372,7 @@ class InvestigationState:
         inference_type: InferenceType = InferenceType.OBSERVATIONAL_CORRELATION,
         evidence_id: Optional[str] = None,
         p_value: Optional[float] = None,
-        estimated_effect: Optional[float] = None,
+        mde: Optional[float] = None,
     ) -> Evidence:
         """Record an empirical evidence item in the investigation state."""
         if not finding or not finding.strip():
@@ -327,10 +393,11 @@ class InvestigationState:
                 population=population,
                 window=window,
                 inference_type=inference_type,
-                estimated_effect=estimated_effect,
             )
             if p_value is not None:
                 ev.p_value = p_value
+            if mde is not None:
+                ev.mde = mde
         else:
             ev = Evidence(
                 evidence_id=ev_id,
@@ -345,12 +412,13 @@ class InvestigationState:
                 inference_type=inference_type,
                 recorded_at=_utc_now(),
                 p_value=p_value,
-                estimated_effect=estimated_effect,
+                mde=mde,
             )
         if ev.p_value is not None and not (0.0 <= ev.p_value <= 1.0):
             raise ValueError(f"p_value must lie in [0, 1]; got {ev.p_value}")
 
         self.investigation.evidence_store[ev_id] = ev
+        self.register_tests(ev.analysis_request_id or ev.evidence_id, ev.all_tests(), ev.p_value_provenance)
         self.investigation.updated_at = _utc_now()
 
         self._record_event(
@@ -363,6 +431,8 @@ class InvestigationState:
                 "operation": ev.operation,
                 "inference_type": ev.inference_type.value,
                 "p_value": ev.p_value,
+                "p_values": dict(ev.p_values),
+                "tests_in_family": self.tests_run,
             },
         )
         return ev
@@ -511,13 +581,11 @@ class InvestigationState:
         assumptions: Optional[List[str]] = None,
         remaining_uncertainties: Optional[List[str]] = None,
         additional_supported_ids: Optional[List[str]] = None,
-        explained_changes: Optional[Dict[str, float]] = None,
     ) -> Conclusion:
         """Conclude the investigation with a substantiated conclusion.
 
-        `explained_changes` maps hypothesis id -> absolute change in the observed metric attributed
-        to that cause. Where omitted, the mean of `estimated_effect` over the hypothesis' supporting
-        evidence is used; if none is available the cause is reported as unquantified.
+        Explained shares come ONLY from deterministic tool estimates (`Evidence.effect_estimate`):
+        the most precise supporting estimate is used; a cause with none is reported as unquantified.
         """
         if not conclusion_summary or not conclusion_summary.strip():
             raise ValueError("Conclusion summary cannot be empty.")
@@ -544,7 +612,7 @@ class InvestigationState:
         if demoted:
             raise ValueError(f"Cannot conclude: hypothesis(es) {demoted} no longer satisfy the support rule.")
 
-        conclusion = self._build_conclusion("concluded", ids, explained_changes)
+        conclusion = self._build_conclusion("concluded", ids)
 
         now = _utc_now()
         self.investigation.status = InvestigationStatus.CONCLUDED
@@ -593,7 +661,7 @@ class InvestigationState:
 
         self.reassess_supported()
         conclusion = self._build_conclusion(
-            "insufficient_evidence", self.supported_hypothesis_ids(), None,
+            "insufficient_evidence", self.supported_hypothesis_ids(),
             missing_summary=missing_information_summary.strip(),
         )
 
@@ -635,24 +703,32 @@ class InvestigationState:
         return (f"{what} for {self._fmt_window(obs.comparison_window)} (comparison window) "
                 f"and {self._fmt_window(obs.baseline_window)} (baseline window)")
 
-    def _estimate_for(self, hyp: Hypothesis, explained_changes: Optional[Dict[str, float]]) -> Tuple[Optional[float], List[str], str]:
+    def _estimate_for(self, hyp: Hypothesis):
+        """Best deterministic estimate for a cause: the supporting evidence's most precise EffectEstimate."""
         total = self.investigation.observation.absolute_change
-        if explained_changes and hyp.hypothesis_id in explained_changes:
-            return float(explained_changes[hyp.hypothesis_id]), list(hyp.supporting_evidence_ids), "explicit estimate"
-        effects = [(i, self.investigation.evidence_store[i].estimated_effect) for i in hyp.supporting_evidence_ids
-                   if i in self.investigation.evidence_store and self.investigation.evidence_store[i].estimated_effect is not None]
-        if effects:
-            return (sum(v for _, v in effects) / len(effects), [i for i, _ in effects],
-                    f"mean of {len(effects)} evidence estimate(s)")
+        ests = [(i, self.investigation.evidence_store[i].effect_estimate) for i in hyp.supporting_evidence_ids
+                if i in self.investigation.evidence_store and self.investigation.evidence_store[i].effect_estimate is not None]
+        if ests:
+            eid, est = min(ests, key=lambda t: t[1].uncertainty_width())
+            note = "most precise of %d estimate(s)" % len(ests) if len(ests) > 1 else "single tool estimate"
+            return est, [eid], note
         if normalize_category(hyp.category) == HypothesisCategory.NATURAL_VARIATION:
-            return total, list(hyp.supporting_evidence_ids), "change attributed to chance variation"
+            return None, list(hyp.supporting_evidence_ids), "change attributed to chance variation (not a tool estimate)"
         return None, list(hyp.supporting_evidence_ids), "no quantified effect estimate available"
+
+    @staticmethod
+    def _statement(title: str, category: str, attribution: str, est: Optional[EffectEstimate], share: Optional[float]) -> str:
+        lead = (f"{title} ({category}) is supported by the evidence" if attribution == "confirmed"
+                else f"The evidence is consistent with {title} ({category}); the available tools cannot confirm the underlying cause")
+        if est is None or share is None:
+            return lead + "; its contribution to the observed change could not be quantified."
+        unc = (f" +/- {est.se:.3g} SE" if est.se is not None else f" (CI {est.ci_lower:.3g} to {est.ci_upper:.3g})")
+        return lead + f", accounting for about {share:.0%} of the observed change (estimate {est.value:+.4g}{unc}, method {est.method})."
 
     def _build_conclusion(
         self,
         outcome: str,
         supported_ids: List[str],
-        explained_changes: Optional[Dict[str, float]],
         missing_summary: str = "",
     ) -> Conclusion:
         inv = self.investigation
@@ -660,11 +736,25 @@ class InvestigationState:
         warnings: List[str] = []
 
         causes: List[ExplainedShare] = []
+        estimates: Dict[str, EffectEstimate] = {}
         for hid in supported_ids:
             hyp = inv.hypotheses[hid]
-            est, basis, note = self._estimate_for(hyp, explained_changes)
-            share = (est / total) if (est is not None and total != 0) else None
-            causes.append(ExplainedShare(hid, hyp.category, est, share, basis, note))
+            est, basis, note = self._estimate_for(hyp)
+            if normalize_category(hyp.category) == HypothesisCategory.NATURAL_VARIATION:
+                value, share = total, (1.0 if total != 0 else None)
+            else:
+                value = est.value if est else None
+                share = (est.value / total) if (est is not None and total != 0) else None
+            attribution = attribution_strength(hyp.category)
+            if est is not None:
+                estimates[hid] = est
+            causes.append(ExplainedShare(
+                hid, hyp.category, value, share, basis, note, attribution,
+                method=est.method if est else "", se=est.se if est else None,
+                ci_lower=est.ci_lower if est else None, ci_upper=est.ci_upper if est else None,
+                window=est.window if est else None,
+                statement=self._statement(hyp.title, hyp.category, attribution, est, share),
+            ))
 
         quantified = [c for c in causes if c.estimated_change is not None]
         explained = sum(c.estimated_change for c in quantified)
@@ -676,6 +766,12 @@ class InvestigationState:
             warnings.append(
                 f"Supported cause(s) {unquantified} have no quantified effect; the unexplained remainder "
                 "may include their contribution."
+            )
+        methods = sorted({e.method for e in estimates.values()})
+        if len(methods) > 1:
+            warnings.append(
+                "Possible double counting: shares come from different methods "
+                f"({methods}) whose attributions may overlap; do not assume they add up independently."
             )
         if total == 0:
             warnings.append("Observed change is zero; shares are undefined.")
@@ -738,6 +834,9 @@ class InvestigationState:
             inconclusive_hypothesis_ids=inconclusive,
             data_requests=requests,
             warnings=warnings,
+            tests_in_family=self.tests_run,
+            fdr_alpha=self.policy.alpha,
+            statements=[c.statement for c in causes],
         )
 
     # ------------------------------------------------------------------ validation
@@ -868,6 +967,7 @@ class InvestigationState:
                 history=trans_list,
                 created_at=datetime.fromisoformat(h_data["created_at"]),
                 updated_at=datetime.fromisoformat(h_data["updated_at"]),
+                support_snapshot=dict(h_data.get("support_snapshot", {})),
             )
 
         # Reconstruct evidence
@@ -945,5 +1045,6 @@ class InvestigationState:
             conclusion=Conclusion.from_dict(data["conclusion"]) if data.get("conclusion") else None,
             support_policy=dict(data.get("support_policy", {})),
             testability={k: TestabilityAssessment.from_dict(v) for k, v in data.get("testability", {}).items()},
+            test_registry={k: float(v) for k, v in data.get("test_registry", {}).items()},
         )
         return cls(inv)

@@ -8,7 +8,7 @@ or system execution is prohibited.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 
 @dataclass
@@ -25,6 +25,58 @@ class OperationSpec:
     # testability (investigation.testability) is derived from these.
     requires_tables: List[str] = field(default_factory=list)
     provides: List[str] = field(default_factory=list)
+    # Operations that compare two periods always receive the baseline window.
+    needs_comparison_window: bool = False
+    # Extra per-operation parameter checks: params -> error message or None.
+    extra_validator: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None
+
+
+def _int_in(params: Dict[str, Any], key: str, lo: int, hi: int) -> Optional[str]:
+    if key in params:
+        v = params[key]
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            return f"Parameter '{key}' must be an integer in [{lo}, {hi}]."
+    return None
+
+
+def _validate_statistical_test(p: Dict[str, Any]) -> Optional[str]:
+    t = p.get("test_type", "proportions")
+    if t not in ("proportions", "means"):
+        return "test_type must be 'proportions' or 'means'."
+    if t == "proportions":
+        for k in ("k1", "n1", "k2", "n2"):
+            if k not in p:
+                return f"test_type='proportions' requires '{k}'."
+        for k in ("k1", "n1", "k2", "n2"):
+            if isinstance(p[k], bool) or not isinstance(p[k], int) or p[k] < 0:
+                return f"'{k}' must be a non-negative integer."
+        if p["n1"] == 0 or p["n2"] == 0:
+            return "n1 and n2 must be positive."
+        if p["k1"] > p["n1"] or p["k2"] > p["n2"]:
+            return "k cannot exceed n."
+    else:
+        for k in ("values1", "values2"):
+            v = p.get(k)
+            if not isinstance(v, list) or not 2 <= len(v) <= 10000 or not all(
+                    isinstance(x, (int, float)) and not isinstance(x, bool) for x in v):
+                return f"'{k}' must be a list of 2-10000 numbers."
+    return None
+
+
+def _validate_seasonal(p: Dict[str, Any]) -> Optional[str]:
+    return _int_in(p, "baseline_weeks", 1, 52) or _int_in(p, "min_weeks", 1, 52)
+
+
+def _validate_retention(p: Dict[str, Any]) -> Optional[str]:
+    days = p.get("retention_days")
+    if days is not None and (not days or len(days) > 8 or not all(isinstance(d, int) and not isinstance(d, bool) and 1 <= d <= 365 for d in days)):
+        return "retention_days must be 1-8 integers in [1, 365]."
+    ev = p.get("qualifying_events")
+    if ev is not None and (len(ev) > 20 or not all(isinstance(e, str) for e in ev)):
+        return "qualifying_events must be up to 20 strings."
+    if p.get("cohort_period") not in (None, "day", "week", "month"):
+        return "cohort_period must be 'day', 'week' or 'month'."
+    return None
 
 
 # Bounded catalogue of operations exposed to the investigation controller
@@ -59,6 +111,7 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         example={"funnel_steps": ["checkout_started", "order_completed"], "breakdown": ["browser"]},
         requires_tables=['events', 'users'],
         provides=['funnel_conversion'],
+        needs_comparison_window=True,
     ),
     "segment": OperationSpec(
         name="segment",
@@ -79,6 +132,7 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         example={"table": "orders", "breakdown": ["device_type"], "aggregation": "rate", "metric_column": "status", "metric_value": "completed"},
         requires_tables=['orders', 'users'],
         provides=['segment_comparison'],
+        needs_comparison_window=True,
     ),
     "period_comparison": OperationSpec(
         name="period_comparison",
@@ -89,6 +143,7 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         example={"table": "orders", "aggregation": "mean", "metric_column": "amount"},
         requires_tables=['events', 'users'],
         provides=['period_comparison'],
+        needs_comparison_window=True,
     ),
     "time_series": OperationSpec(
         name="time_series",
@@ -141,6 +196,85 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         example={"breakdown": ["device_type"]},
         requires_tables=['orders', 'users'],
         provides=['failure_reason_breakdown'],
+    ),
+    "seasonal_baseline": OperationSpec(
+        name="seasonal_baseline",
+        description="Compare each day of the window with the SAME WEEKDAY in prior weeks (expected value and prediction range) to separate calendar seasonality from a real shift.",
+        allowed_params={"table": str, "time_column": str, "metric_column": str, "aggregation": str, "metric_value": (str, int, float, bool), "baseline_weeks": int, "min_weeks": int},
+        required_params=["aggregation"],
+        allowed_dimensions=[],
+        example={"table": "orders", "aggregation": "count", "baseline_weeks": 4},
+        notes="Needs at least min_weeks (default 2) prior weeks of data before each day; otherwise returns insufficient_data.",
+        requires_tables=["events", "users"],
+        provides=["seasonal_baseline"],
+        extra_validator=_validate_seasonal,
+    ),
+    "mix_shift_decomposition": OperationSpec(
+        name="mix_shift_decomposition",
+        description="Split the change in a rate between baseline and comparison windows into a MIX effect (who is in the population), a within-segment RATE effect and an interaction; they sum exactly to the total change.",
+        allowed_params={"table": str, "metric_column": str, "metric_value": (str, int, float, bool), "breakdown": list, "time_column": str},
+        required_params=["metric_column", "metric_value", "breakdown"],
+        allowed_dimensions=["browser", "device_type", "acquisition_channel", "country", "plan_tier"],
+        example={"table": "orders", "metric_column": "status", "metric_value": "completed", "breakdown": ["acquisition_channel"]},
+        requires_tables=["orders", "users"],
+        provides=["mix_decomposition"],
+        needs_comparison_window=True,
+    ),
+    "retention": OperationSpec(
+        name="retention",
+        description="Cohort retention (share of signup cohorts active N days later) with complete-follow-up enforcement.",
+        allowed_params={"retention_days": list, "qualifying_events": list, "cohort_period": str, "max_observation_date": str},
+        required_params=[],
+        allowed_dimensions=[],
+        example={"retention_days": [1, 7], "cohort_period": "week"},
+        requires_tables=["users", "events"],
+        provides=["retention_curve"],
+        extra_validator=_validate_retention,
+    ),
+    "retention_comparison": OperationSpec(
+        name="retention_comparison",
+        description="Compare cohort retention between baseline and comparison windows, with a two-proportion test per retention horizon.",
+        allowed_params={"retention_days": list, "qualifying_events": list, "cohort_period": str, "max_observation_date": str},
+        required_params=[],
+        allowed_dimensions=[],
+        example={"retention_days": [1, 7], "cohort_period": "week"},
+        requires_tables=["users", "events"],
+        provides=["cohort_retention"],
+        needs_comparison_window=True,
+        extra_validator=_validate_retention,
+    ),
+    "duplicate_event_check": OperationSpec(
+        name="duplicate_event_check",
+        description="Detect inflated or duplicated telemetry events per session.",
+        allowed_params={"event_name": str, "max_per_session": int},
+        required_params=[],
+        allowed_dimensions=[],
+        example={"event_name": "order_completed", "max_per_session": 3},
+        requires_tables=["events"],
+        provides=["duplicate_event_detection"],
+        extra_validator=lambda p: _int_in(p, "max_per_session", 1, 1000),
+    ),
+    "metric_aggregate": OperationSpec(
+        name="metric_aggregate",
+        description="Compute a standard, explicitly defined product metric (e.g. order_conversion_rate, gross_revenue) with its definition.",
+        allowed_params={"metric_name": str},
+        required_params=["metric_name"],
+        allowed_dimensions=[],
+        example={"metric_name": "order_conversion_rate"},
+        requires_tables=["users", "events", "orders"],
+        provides=["metric_definition_lookup"],
+    ),
+    "statistical_test": OperationSpec(
+        name="statistical_test",
+        description="Standalone two-proportion z-test (conversion/failure rates) or Welch t-test (continuous metrics) on caller-supplied counts/values.",
+        allowed_params={"test_type": str, "k1": int, "n1": int, "k2": int, "n2": int, "values1": list, "values2": list, "label1": str, "label2": str, "target_effect": (int, float)},
+        required_params=["test_type"],
+        allowed_dimensions=[],
+        example={"test_type": "proportions", "k1": 30, "n1": 400, "k2": 55, "n2": 410},
+        notes="Inputs are NOT read from the data, so its p-value is excluded from the multiple-testing family and the SUPPORTED rule. Use it for sanity checks of numbers already returned by other tools.",
+        requires_tables=[],
+        provides=["adhoc_statistical_test"],
+        extra_validator=_validate_statistical_test,
     ),
     "feedback_analysis": OperationSpec(
         name="feedback_analysis",
@@ -233,6 +367,11 @@ def validate_analysis_plan(
                 f"Parameter '{key}' has invalid type {type(val).__name__}; "
                 f"expected {expected_type}."
             )
+
+    if spec.extra_validator is not None:
+        extra_err = spec.extra_validator(params)
+        if extra_err:
+            return False, f"Operation '{op_clean}': {extra_err}"
 
     # Check dimensions: every dimension (explicit or via `breakdown`) must be allowed for this op.
     requested = list(dimensions or [])

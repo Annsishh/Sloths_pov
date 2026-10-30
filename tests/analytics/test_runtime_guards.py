@@ -42,10 +42,10 @@ def test_loader_refuses_link_into_ground_truth(tmp_path):
         link.symlink_to(target, target_is_directory=True)
     except (OSError, NotImplementedError):
         if sys.platform != "win32":
-            pytest.skip("symlinks not permitted here")
+            pytest.skip("SKIPPED: this platform does not permit creating symlinks and the Windows-junction fallback does not apply")
         made = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
         if made.returncode != 0:
-            pytest.skip("cannot create a directory link on this machine")
+            pytest.skip("SKIPPED: neither a symlink (needs Developer Mode/admin) nor a directory junction (mklink /J) could be created on this machine, so link-resolution cannot be exercised here")
     with pytest.raises(ForbiddenDataPathError):
         DataLoader(data_dir=link)
 

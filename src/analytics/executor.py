@@ -17,6 +17,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
+from analytics.decomposition import mix_shift_decomposition
+from analytics.seasonality import seasonal_baseline
 from analytics.data_quality import duplicate_event_check, event_volume_check, tracking_gap_check
 from analytics.feedback_analysis import analyze_errors, analyze_feedback
 from analytics.funnel import compare_funnel, compute_funnel
@@ -116,6 +118,14 @@ class AnalyticsExecutor:
                 primary = self.loader.load(primary_table)
                 users = self.loader.load("users")
                 res = compare_periods(primary, users, request)
+
+            elif op == "seasonal_baseline":
+                primary_table = request.params.get("table", "events")
+                res = seasonal_baseline(self.loader.load(primary_table), self.loader.load("users"), request)
+
+            elif op == "mix_shift_decomposition":
+                primary_table = request.params.get("table", "orders")
+                res = mix_shift_decomposition(self.loader.load(primary_table), self.loader.load("users"), request)
 
             # 5. Release & Exposure Analysis
             elif op == "release_impact":

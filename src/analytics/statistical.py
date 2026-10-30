@@ -16,6 +16,7 @@ import pandas as pd
 from scipy import stats
 
 from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
+from analytics.power import mde_means, mde_proportions
 
 
 def compare_proportions(
@@ -26,8 +27,15 @@ def compare_proportions(
     label1: str = "sample_1",
     label2: str = "sample_2",
     alpha: float = 0.05,
+    target_effect: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Perform a two-proportion z-test comparing k1/n1 vs k2/n2."""
+    """Perform a two-proportion z-test comparing k1/n1 vs k2/n2.
+
+    `target_effect` is the absolute difference that matters (e.g. the observed metric change). If the test is
+    not significant and its minimum detectable effect exceeds the target, the result is flagged `underpowered`
+    (inconclusive, not evidence of no effect). Without a target, `underpowered` is None: a non-significant
+    result is by construction smaller than its own MDE, so that comparison would say nothing.
+    """
     if n1 <= 0 or n2 <= 0:
         raise ValueError(f"Sample sizes must be positive. Found n1={n1}, n2={n2}")
     if k1 < 0 or k1 > n1 or k2 < 0 or k2 > n2:
@@ -61,6 +69,18 @@ def compare_proportions(
             "Low expected count (< 5) in at least one cell; normal approximation may have reduced accuracy."
         )
 
+    mde = mde_proportions(p2, n1, n2, alpha=alpha)
+    underpowered = None
+    if mde is not None and p_val >= alpha:
+        warnings.append(f"Not significant: this test could only reliably detect differences >= {mde:.4f} (80% power).")
+        if target_effect is not None:
+            underpowered = bool(mde > abs(target_effect))
+            if underpowered:
+                warnings.append(
+                    f"Underpowered for the effect of interest ({abs(target_effect):.4f}): inconclusive, "
+                    "not evidence of no effect."
+                )
+
     return {
         f"rate_{label1}": round(p1, 4),
         f"rate_{label2}": round(p2, 4),
@@ -76,6 +96,8 @@ def compare_proportions(
         "ci_upper_95": round(ci_upper, 4),
         "is_significant_p05": bool(p_val < 0.05),
         "is_significant_p01": bool(p_val < 0.01),
+        "mde_80pct_power": round(mde, 6) if mde is not None else None,
+        "underpowered": underpowered,
         "warnings": warnings,
     }
 
@@ -86,8 +108,9 @@ def compare_means(
     label1: str = "sample_1",
     label2: str = "sample_2",
     alpha: float = 0.05,
+    target_effect: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Perform Welch's two-sample t-test (unequal variances)."""
+    """Perform Welch's two-sample t-test (unequal variances). See compare_proportions for `target_effect`."""
     arr1 = np.asarray(values1, dtype=float)
     arr2 = np.asarray(values2, dtype=float)
 
@@ -135,6 +158,21 @@ def compare_means(
             p_val = None
             warnings.append("Zero variance observed with unequal means; t-statistic cannot be standardly evaluated.")
 
+    pooled_sd = float(np.sqrt(((n1 - 1) * s1 ** 2 + (n2 - 1) * s2 ** 2) / (n1 + n2 - 2)))
+    mde = mde_means(pooled_sd, n1, n2, alpha=alpha)
+    underpowered = None
+    if mde is not None and p_val is not None and p_val >= alpha:
+        warnings.append(f"Not significant: this test could only reliably detect differences >= {mde:.4f} (80% power).")
+        if target_effect is not None:
+            underpowered = bool(mde > abs(target_effect))
+            if underpowered:
+                warnings.append(f"Underpowered for the effect of interest ({abs(target_effect):.4f}): inconclusive.")
+    if set(np.unique(arr1)) | set(np.unique(arr2)) <= {0.0, 1.0}:
+        warnings.append(
+            "Test-selection misuse: both samples are binary (0/1). Use the two-proportion z-test "
+            "(test_type='proportions') for rates; Welch's t-test is for continuous metrics."
+        )
+
     return {
         f"mean_{label1}": round(m1, 4),
         f"mean_{label2}": round(m2, 4),
@@ -151,6 +189,9 @@ def compare_means(
         "ci_upper_95": round(ci_upper, 4),
         "is_significant_p05": bool(p_val < 0.05) if p_val is not None else None,
         "is_significant_p01": bool(p_val < 0.01) if p_val is not None else None,
+        "mde_80pct_power": round(mde, 6) if mde is not None else None,
+        "underpowered": underpowered,
+        "misuse_binary_data": bool(set(np.unique(arr1)) | set(np.unique(arr2)) <= {0.0, 1.0}),
         "warnings": warnings,
     }
 
@@ -175,6 +216,7 @@ def run_statistical_test(request: AnalysisRequest) -> AnalysisResult:
                 n2=int(request.params["n2"]),
                 label1=request.params.get("label1", "sample_1"),
                 label2=request.params.get("label2", "sample_2"),
+                target_effect=request.params.get("target_effect"),
             )
         elif test_type == "means":
             res_dict = compare_means(
@@ -182,6 +224,7 @@ def run_statistical_test(request: AnalysisRequest) -> AnalysisResult:
                 values2=request.params["values2"],
                 label1=request.params.get("label1", "sample_1"),
                 label2=request.params.get("label2", "sample_2"),
+                target_effect=request.params.get("target_effect"),
             )
         else:
             return AnalysisResult(
@@ -202,6 +245,7 @@ def run_statistical_test(request: AnalysisRequest) -> AnalysisResult:
 
     warnings = res_dict.pop("warnings", [])
     df = pd.DataFrame([res_dict])
+    flags = ["binary_data_with_means_test"] if res_dict.get("misuse_binary_data") else []
 
     return AnalysisResult(
         request_id=request.request_id,
@@ -211,7 +255,14 @@ def run_statistical_test(request: AnalysisRequest) -> AnalysisResult:
         metadata={
             "test_type": test_type,
             "window": str(request.window),
+            "misuse_flags": flags,
+            # Inputs (k, n, values) are supplied by the caller, not read from data: the p-value cannot be
+            # verified, so the investigation excludes it from the multiple-testing family and the SUPPORTED rule.
+            "p_value_provenance": "caller_supplied",
         },
-        limitations=["Assumes independent observations and random sampling."],
+        limitations=[
+            "Assumes independent observations and random sampling.",
+            "Inputs are caller-supplied, not computed from the data; this p-value does not count toward the SUPPORTED rule.",
+        ],
         warnings=warnings,
     )

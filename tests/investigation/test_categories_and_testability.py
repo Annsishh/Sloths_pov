@@ -69,6 +69,8 @@ def test_testable_set_with_current_catalogue_and_all_tables(full_assessment):
     assert testable == {
         "code_regression", "feature_or_experiment_effect", "traffic_mix_shift", "tracking_loss",
         "third_party_outage", "denominator_effect", "natural_variation",
+        # Phase 2a: seasonal_baseline and retention_comparison are now exposed through the catalogue
+        "seasonality_or_calendar", "gradual_or_cohort_effect",
     }
 
 
@@ -77,11 +79,9 @@ def test_untestable_categories_say_what_data_is_missing(full_assessment):
                 "bot_or_invalid_traffic", "pipeline_or_definition_change", "market_or_competitor"):
         ta = full_assessment[cat]
         assert not ta.testable and ta.data_request and ta.missing_capabilities
-    # Not yet testable only because the tools aren't exposed (Phase 2 adds them):
-    assert not full_assessment["seasonality_or_calendar"].testable
-    assert "seasonal_baseline" in full_assessment["seasonality_or_calendar"].missing_capabilities
-    assert not full_assessment["gradual_or_cohort_effect"].testable
-    assert "cohort_retention" in full_assessment["gradual_or_cohort_effect"].missing_capabilities
+    # Phase 2a: these two became testable once their tools were exposed.
+    assert full_assessment["seasonality_or_calendar"].provided_by == ["seasonal_baseline"]
+    assert full_assessment["gradual_or_cohort_effect"].provided_by == ["retention_comparison"]
 
 
 def test_composite_and_placeholder_categories_are_never_testable(full_assessment):
@@ -109,5 +109,6 @@ def test_testability_is_derived_from_the_catalogue_not_hard_coded():
 def test_catalogue_operations_declare_real_tables_and_capabilities():
     for name, spec in CONTROLLED_OPERATIONS.items():
         assert spec.provides, name
-        assert spec.requires_tables, name
+        # statistical_test works on caller-supplied numbers and reads no table
+        assert spec.requires_tables or "adhoc_statistical_test" in spec.provides, name
         assert set(spec.requires_tables) <= set(CATALOGUE), name
