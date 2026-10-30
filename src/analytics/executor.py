@@ -17,7 +17,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
+from analytics.changepoint import change_point
 from analytics.decomposition import mix_shift_decomposition
+from analytics.ratio_metrics import ratio_metric_comparison
 from analytics.seasonality import seasonal_baseline
 from analytics.data_quality import duplicate_event_check, event_volume_check, tracking_gap_check
 from analytics.feedback_analysis import analyze_errors, analyze_feedback
@@ -25,7 +27,7 @@ from analytics.funnel import compare_funnel, compute_funnel
 from analytics.loader import DataCatalogue, DataLoader
 from analytics.metrics import compute_metric
 from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
-from analytics.release_analysis import exposure_effect, release_impact
+from analytics.release_analysis import exposure_effect, release_did, release_impact, sample_ratio_check
 from analytics.retention import compare_retention, compute_retention
 from analytics.segmentation import compare_segments, segment_metric
 from analytics.statistical import run_statistical_test
@@ -126,6 +128,21 @@ class AnalyticsExecutor:
             elif op == "mix_shift_decomposition":
                 primary_table = request.params.get("table", "orders")
                 res = mix_shift_decomposition(self.loader.load(primary_table), self.loader.load("users"), request)
+
+            elif op == "change_point":
+                primary_table = request.params.get("table", "orders")
+                res = change_point(self.loader.load(primary_table), self.loader.load("users"), request)
+
+            elif op == "ratio_metric_comparison":
+                res = ratio_metric_comparison(self.loader.load("orders"), self.loader.load("events"), request)
+
+            elif op == "release_did":
+                primary_table = request.params.get("table", "orders")
+                res = release_did(self.loader.load("releases"), self.loader.load("events"),
+                                  self.loader.load(primary_table), self.loader.load("users"), request)
+
+            elif op == "sample_ratio_check":
+                res = sample_ratio_check(self.loader.load("feature_exposures"), request)
 
             # 5. Release & Exposure Analysis
             elif op == "release_impact":

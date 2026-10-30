@@ -38,3 +38,21 @@ Autonomous-run decision log. Format: phase · question · options · choice · w
 12. **Seasonality effect estimate not produced** (how much of a change is "seasonal" depends on the baseline definition);
     seasonality causes stay unquantified. `[REVIEW]`
 13. Junction/symlink test skip messages now state the reason.
+
+## Phase 2b
+
+1. **code_regression now needs `release_diff_in_diff`** (was `release_before_after`). `release_impact` has no significance
+   test, so a code_regression could never meet the SUPPORTED rule. Updated one Phase 1 assertion (missing capability name).
+2. **DiD exposure definition.** "Exposed" = user with >=1 event on the release version in the post window (a user-level,
+   self-selected group). Alternatives (session-level, assigned-by-flag) rejected: pre-release nobody has the new version at
+   session level. Caveats (parallel trends, selection) are in the tool's limitations. The effect estimate is
+   `DiD x exposed share of post rows` so it is in units of the overall metric. `[REVIEW]` selection bias of upgraders.
+3. **Change point.** Single split scan + seeded permutation test of the *max* statistic (naive per-split t-test p-values are
+   anti-conservative). Ignores autocorrelation/weekly seasonality (stated in limitations). Step-vs-ramp flag by SSE.
+4. **SRM threshold 0.001** (industry convention); on mismatch `exposure_effect` withholds its p-value (so it cannot enter the
+   BH family or support a hypothesis) and sets `trusted=False`.
+5. **Delta method** per-user clusters (`user` = independent unit). Only `revenue_per_session` / `orders_per_session` are named
+   ratio metrics; the pure function `delta_method_ratio` is general.
+6. **Edge sweep** is a parametrised test over EVERY catalogue operation x {empty tables, single-day window, no-data window}
+   asserting a structured status instead of an exception. It passed without needing further fixes beyond those made in
+   Phase 1/2a.

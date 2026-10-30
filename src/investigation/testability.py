@@ -24,7 +24,7 @@ class CategoryRequirement:
 
 
 CATEGORY_REQUIREMENTS: Dict[C, CategoryRequirement] = {
-    C.CODE_REGRESSION: CategoryRequirement(("release_before_after",), "release log with deployment timestamps"),
+    C.CODE_REGRESSION: CategoryRequirement(("release_diff_in_diff",), "release log with deployment timestamps"),
     C.FEATURE_OR_EXPERIMENT_EFFECT: CategoryRequirement(("experiment_exposure_comparison",), "feature-flag / experiment exposure log"),
     C.CONFIG_OR_FLAG_CHANGE: CategoryRequirement(("config_change_log",), "configuration and feature-flag change audit log"),
     C.PERFORMANCE_DEGRADATION: CategoryRequirement(("latency_metrics",), "page/API latency and error-rate logs (p50/p95)"),

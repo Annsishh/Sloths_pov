@@ -94,7 +94,8 @@ def test_testability_is_derived_from_available_tables():
     no_releases = [t for t in CATALOGUE if t != "releases"]
     ta = assess_testability(CONTROLLED_OPERATIONS, no_releases)
     assert not ta["code_regression"].testable
-    assert ta["code_regression"].missing_capabilities == ["release_before_after"]
+    # Phase 2b: code_regression now needs release_diff_in_diff (release_impact has no significance test)
+    assert ta["code_regression"].missing_capabilities == ["release_diff_in_diff"]
     assert ta["tracking_loss"].testable  # unaffected
 
 

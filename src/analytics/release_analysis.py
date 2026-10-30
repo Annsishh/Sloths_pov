@@ -18,6 +18,7 @@ Methodology
 
 from __future__ import annotations
 
+import math
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -287,6 +288,22 @@ def exposure_effect(
             f"{n_raw_exps - len(exps)} repeated exposure record(s) were deduplicated to the user's earliest exposure."
         )
 
+    # Sample ratio mismatch: an A/B result is only trustworthy if assignment matched the intended split.
+    from analytics.experiment_checks import sample_ratio_mismatch
+    srm = None
+    assigned = exps.groupby("variant").size()
+    if len(assigned) >= 2:
+        ratios = request.params.get("expected_ratio")
+        if ratios is not None and len(ratios) != len(assigned):
+            ratios = None
+            warnings.append("expected_ratio length does not match the number of variants; an equal split was assumed.")
+        srm = sample_ratio_mismatch(assigned.to_numpy(), ratios)
+        if srm["mismatch"]:
+            warnings.append(
+                f"SAMPLE RATIO MISMATCH (chi-square p={srm['p_value']:.2g}): assignment {dict(zip(assigned.index, assigned.values))} "
+                "deviates from the intended split. The A/B result is untrusted and no p-value is reported."
+            )
+
     variant_results = []
     incomplete_follow_up_count = 0
 
@@ -371,6 +388,11 @@ def exposure_effect(
         z_stat = None
         p_val = None
 
+    if srm is not None and srm["mismatch"]:
+        p_val = None
+        z_stat = None
+        limitations.append("Effect test withheld because of a sample ratio mismatch.")
+
     limitations.append(
         "Observational distinction: Exposure records reflect assignment, but true causal inference "
         "requires confirming balance on pre-exposure covariates (device, channel, tenure) "
@@ -391,8 +413,161 @@ def exposure_effect(
             "z_statistic": round(z_stat, 4) if z_stat is not None else None,
             "p_value": round(p_val, 4) if p_val is not None else None,
             "is_significant_p05": bool(p_val < 0.05) if p_val is not None else None,
+            "srm": srm,
+            "trusted": not (srm is not None and srm["mismatch"]),
             "statistical_inference_caveat": "Statistical significance indicates sample association, not causal proof.",
         },
         limitations=limitations,
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Difference-in-differences: users on the new version vs users still on the old one, same window
+# ---------------------------------------------------------------------------
+
+def release_did(
+    releases_df: pd.DataFrame,
+    events_df: pd.DataFrame,
+    primary_df: pd.DataFrame,
+    users_df: pd.DataFrame,
+    request: AnalysisRequest,
+) -> AnalysisResult:
+    """Difference-in-differences for a release.
+
+    "Exposed" users are those with at least one event on the release's version after deployment (within the
+    post window); everyone else is the comparison group. For each group the rate of
+    `metric_column == metric_value` is measured in the pre and post windows; the DiD is
+    (post_exposed - pre_exposed) - (post_other - pre_other). Unlike a plain pre/post comparison it nets out
+    anything that hit both groups at the same time (seasonality, campaigns, outages across versions).
+    """
+    def bad(msg, status=AnalysisStatus.INVALID_PARAMS):
+        return AnalysisResult(request.request_id, "release_did", status, None, error_message=msg)
+
+    from scipy import stats as _stats
+
+    p = request.params
+    release_id = p.get("release_id")
+    window_days = int(p.get("window_days", 7))
+    metric_column, metric_value = p.get("metric_column", "status"), p.get("metric_value", "completed")
+    time_column = p.get("time_column", "timestamp")
+    exposure_column = p.get("exposure_column", "app_version")
+    if not release_id:
+        return bad("release_id parameter is required.")
+    if window_days < 1:
+        return bad("window_days must be >= 1.")
+    row = releases_df[releases_df["release_id"] == release_id]
+    if row.empty:
+        return bad(f"Release '{release_id}' not found in releases table.")
+    deploy = pd.Timestamp(row.iloc[0]["deployed_timestamp"])
+    deploy = deploy.tz_localize("UTC") if deploy.tzinfo is None else deploy.tz_convert("UTC")
+    version = row.iloc[0]["version"]
+    if exposure_column not in events_df.columns:
+        return bad(f"exposure_column '{exposure_column}' not found in events.")
+    if metric_column not in primary_df.columns:
+        return bad(f"metric_column '{metric_column}' not found in the analysed table.")
+
+    pre = TimeWindow(deploy - timedelta(days=window_days), deploy)
+    post = TimeWindow(deploy, deploy + timedelta(days=window_days))
+    post_ev = apply_time_filter(events_df, "timestamp", post)
+    exposed_users = set(post_ev.loc[post_ev[exposure_column] == version, "user_id"])
+    if not exposed_users:
+        return bad(f"No users have events on version '{version}' in the post window.", AnalysisStatus.INSUFFICIENT_DATA)
+
+    cells = {}
+    for period, win in (("pre", pre), ("post", post)):
+        scoped = apply_time_filter(primary_df, time_column, win)
+        need = [c for c in request.filters if c in users_df.columns]
+        if need:
+            scoped = enrich_with_user_attrs(scoped, users_df, need)
+        scoped = apply_filters(scoped, request.filters)
+        is_exp = scoped["user_id"].isin(exposed_users)
+        for group, part in (("exposed", scoped[is_exp]), ("other", scoped[~is_exp])):
+            n = len(part)
+            k = int((part[metric_column] == metric_value).sum())
+            cells[(group, period)] = (n, k)
+    empty = [f"{g}/{per}" for (g, per), (n, _) in cells.items() if n == 0]
+    if empty:
+        return bad(f"Empty cell(s) {empty}: difference-in-differences needs observations in all four group x period cells.",
+                   AnalysisStatus.INSUFFICIENT_DATA)
+
+    rate = {key: k / n for key, (n, k) in cells.items()}
+    var = sum(rate[key] * (1 - rate[key]) / cells[key][0] for key in cells)
+    se = math.sqrt(var)
+    did = (rate[("exposed", "post")] - rate[("exposed", "pre")]) - (rate[("other", "post")] - rate[("other", "pre")])
+    z = did / se if se > 0 else (0.0 if did == 0 else math.inf)
+    pval = float(2 * _stats.norm.sf(abs(z))) if math.isfinite(z) else 0.0
+    zc = float(_stats.norm.ppf(0.975))
+    mde = float((zc + _stats.norm.ppf(0.8)) * se)
+
+    post_n = cells[("exposed", "post")][0] + cells[("other", "post")][0]
+    exposed_share = cells[("exposed", "post")][0] / post_n
+    warnings: List[str] = []
+    small = [f"{g}/{per}" for (g, per), (n, _) in cells.items() if n < 30]
+    if small:
+        warnings.append(f"Small cell(s) {small} (< 30 rows): the normal approximation is unreliable.")
+    pre_gap = rate[("exposed", "pre")] - rate[("other", "pre")]
+
+    df = pd.DataFrame([
+        {"group": g, "period": per, "n": cells[(g, per)][0], "hits": cells[(g, per)][1], "rate": round(rate[(g, per)], 4)}
+        for g in ("exposed", "other") for per in ("pre", "post")
+    ])
+    return AnalysisResult(
+        request_id=request.request_id, operation="release_did", status=AnalysisStatus.OK, data=df,
+        metadata={
+            "release_id": release_id, "version": version, "deployed_timestamp": deploy.isoformat(),
+            "exposure_definition": f"users with >=1 event where {exposure_column} == '{version}' in the post window",
+            "did": did, "se": se, "z": z, "ci_lower": did - zc * se, "ci_upper": did + zc * se,
+            "exposed_share_post": exposed_share, "pre_period_gap": pre_gap, "mde": mde,
+            "p_values": {"did_interaction": pval},
+            "effect_estimate": {
+                # change in the OVERALL post-period rate attributable to the release = DiD x share of rows exposed
+                "value": did * exposed_share, "method": "difference_in_differences:exposed_share_weighted",
+                "se": se * exposed_share,
+                "window": {"start": post.start.isoformat(), "end": post.end.isoformat()},
+                "metric": f"rate({metric_column}=={metric_value})",
+            },
+            "window": str(post),
+        },
+        limitations=[
+            "Assumes parallel trends: absent the release, exposed and other users would have moved alike.",
+            "Exposure is self-selected (who upgrades), so groups may differ; the pre-period gap is reported for inspection.",
+            "A DiD estimate is consistent with, not proof of, a release effect.",
+        ],
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sample ratio mismatch
+# ---------------------------------------------------------------------------
+
+def sample_ratio_check(feature_exposures_df: pd.DataFrame, request: AnalysisRequest) -> AnalysisResult:
+    """Chi-square check that assignment counts match the intended allocation (default equal split)."""
+    from analytics.experiment_checks import sample_ratio_mismatch
+
+    def bad(msg, status=AnalysisStatus.INVALID_PARAMS):
+        return AnalysisResult(request.request_id, "sample_ratio_check", status, None, error_message=msg)
+
+    feature_key = request.params.get("feature_key")
+    if not feature_key:
+        return bad("feature_key parameter is required.")
+    exps = feature_exposures_df[feature_exposures_df["feature_key"] == feature_key]
+    if request.window is not None and not exps.empty:
+        exps = apply_time_filter(exps, "first_exposed_timestamp", request.window)
+    exps = exps.drop_duplicates(subset=["user_id"])
+    counts = exps.groupby("variant").size()
+    if len(counts) < 2:
+        return bad(f"Fewer than two variants observed for '{feature_key}'.", AnalysisStatus.INSUFFICIENT_DATA)
+    ratios = request.params.get("expected_ratio")
+    if ratios is not None and len(ratios) != len(counts):
+        return bad(f"expected_ratio needs {len(counts)} entries (variants: {list(counts.index)}).")
+    srm = sample_ratio_mismatch(counts.to_numpy(), ratios)
+    df = pd.DataFrame({"variant": counts.index, "assigned": counts.values, "expected": srm["expected"]})
+    warnings = ["SAMPLE RATIO MISMATCH: assignment is not as intended; do not trust A/B results from this experiment."] if srm["mismatch"] else []
+    return AnalysisResult(
+        request.request_id, "sample_ratio_check", AnalysisStatus.OK, df,
+        metadata={"feature_key": feature_key, "srm": srm, "p_values": {"srm_chi_square": srm["p_value"]}, "window": str(request.window)},
+        limitations=["A mismatch indicates broken assignment or logging; a pass does not prove randomisation."],
         warnings=warnings,
     )
