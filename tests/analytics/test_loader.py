@@ -32,7 +32,7 @@ def test_loader_caching():
 
 
 def test_loader_real_dataset():
-    data_dir = Path("C:/Users/ANISHA/OneDrive/Desktop/sloths_pov/data/baseline/investigator_data")
+    data_dir = Path(__file__).resolve().parents[2] / "data" / "baseline" / "investigator_data"
     if not data_dir.exists():
         pytest.skip("Baseline data directory not found")
 

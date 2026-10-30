@@ -20,3 +20,30 @@ ENV/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local/secret config
+.env.*
+!.env.example
+*.local.json
+
+# Local databases and scratch output
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Evaluation outputs (Phase 4) and other generated artifacts
+eval_results/
+results/
+out/
+
+# Build / packaging
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# NOTE: data/ is intentionally NOT ignored yet. The seeded datasets under data/
+# are tracked and consumed by tests (test_loader, test_investigation_loop).
+# Regenerate with: python generate_data.py --all --output-dir data
