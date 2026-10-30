@@ -16,7 +16,7 @@ MENTION_ALLOWLIST = {
     Path("controller/prompts.py"),
 }
 # The runtime guard must name the term in order to block it; it may build Paths but never read files.
-GUARD_FILES = {Path("analytics/path_guard.py")}
+GUARD_FILES = {Path("analytics/path_guard.py"), Path("controller/capability_catalogue.py"), Path("analytics/sql_sandbox.py")}   # name the term in order to block it
 FORBIDDEN_STRINGS = ["ground_truth", "scenario_ground_truth", "ground-truth"]
 
 

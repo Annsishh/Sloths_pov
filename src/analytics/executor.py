@@ -10,7 +10,6 @@ with strict read-only query validation.
 
 from __future__ import annotations
 
-import re
 import sqlite3
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -30,6 +29,7 @@ from analytics.metrics import compute_metric
 from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
 from analytics.release_analysis import exposure_effect, release_did, release_impact, sample_ratio_check
 from analytics.retention import compare_retention, compute_retention
+from analytics.sql_sandbox import SQLPolicyError, SQLSandbox
 from analytics.segmentation import compare_segments, segment_metric
 from analytics.statistical import run_statistical_test
 from analytics.time_series import compare_periods, compute_time_series
@@ -259,144 +259,40 @@ class AnalyticsExecutor:
         """Register a new composable analytical operation handler."""
         self._custom_handlers[name.lower()] = handler
 
+    def _sql_sandbox(self) -> SQLSandbox:
+        """The read-only database file for the current tables (rebuilt if the loaded tables changed)."""
+        tables = {name: self.loader.load(name) for name in self.loader.available_tables()}
+        signature = tuple((n, len(df)) for n, df in sorted(tables.items()))
+        if getattr(self, "_sandbox", None) is None or self._sandbox_signature != signature:
+            if getattr(self, "_sandbox", None) is not None:
+                self._sandbox.close()
+            self._sandbox, self._sandbox_signature = SQLSandbox(tables), signature
+        return self._sandbox
+
     def _execute_sql_query(self, request: AnalysisRequest) -> AnalysisResult:
-        """Execute a safe, read-only SQL query against in-memory SQLite tables."""
-        raw_query = request.params.get("query", "").strip()
-        max_rows = int(request.params.get("max_rows", 5000))
-        timeout_sec = float(request.params.get("timeout_seconds", 5.0))
+        """Execute a validated, read-only SQL query (see analytics.sql_sandbox for the layers of protection)."""
+        def reply(status, error=None, **kw):
+            return AnalysisResult(request_id=request.request_id, operation="custom_query", status=status,
+                                  data=kw.pop("data", None), error_message=error, **kw)
 
-        if not raw_query:
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.INVALID_PARAMS,
-                data=None,
-                error_message="Parameter 'query' is required for custom_query operation.",
-            )
-
-        # Strip SQL comments
-        cleaned_query = re.sub(r"--.*?$|/\*.*?\*/", "", raw_query, flags=re.DOTALL | re.MULTILINE).strip()
-
-        # Reject multiple statements (e.g. separated by semicolons)
-        statements = [s.strip() for s in cleaned_query.split(";") if s.strip()]
-        if len(statements) > 1:
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.INVALID_PARAMS,
-                data=None,
-                error_message="Query rejected by security policy: Multiple statements are not permitted.",
-            )
-
-        target_query = statements[0] if statements else ""
-        if not re.match(r"^(SELECT|WITH)\b", target_query, re.IGNORECASE):
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.INVALID_PARAMS,
-                data=None,
-                error_message="Query rejected by security policy: Only read-only SELECT queries are permitted.",
-            )
-
-        # Reject mutation or management keywords
-        forbidden = re.compile(
-            r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REPLACE|PRAGMA|VACUUM|EXEC|TRANSACTION|BEGIN|COMMIT|ROLLBACK)\b",
-            re.IGNORECASE,
-        )
-        if forbidden.search(target_query):
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.INVALID_PARAMS,
-                data=None,
-                error_message="Query rejected by security policy: Only read-only SELECT queries are permitted.",
-            )
-
-        # Build in-memory SQLite database
-        conn = sqlite3.connect(":memory:")
+        raw_query = request.params.get("query", "")
         try:
-            for table_name in self.loader.available_tables():
-                df = self.loader.load(table_name)
-                # Convert timestamps to ISO strings for SQLite compatibility
-                export_df = df.copy()
-                for col in export_df.columns:
-                    if pd.api.types.is_datetime64_any_dtype(export_df[col]):
-                        export_df[col] = export_df[col].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-                export_df.to_sql(table_name, conn, index=False)
-
-            # SQLite engine-level read-only authorizer
-            def _authorizer(action, arg1, arg2, db_name, trigger_name):
-                allowed = {
-                    sqlite3.SQLITE_SELECT,
-                    sqlite3.SQLITE_READ,
-                    sqlite3.SQLITE_FUNCTION,
-                    sqlite3.SQLITE_RECURSIVE,
-                }
-                if action in allowed:
-                    return sqlite3.SQLITE_OK
-                return sqlite3.SQLITE_DENY
-
-            conn.set_authorizer(_authorizer)
-
-            # Execution time bound via SQLite progress handler
-            start_exec = time.perf_counter()
-            conn.set_progress_handler(
-                lambda: 1 if (time.perf_counter() - start_exec) > timeout_sec else 0,
-                500,
-            )
-
-            # Bounded memory cursor fetch
-            cursor = conn.cursor()
-            cursor.execute(target_query)
-            fetched_rows = cursor.fetchmany(max_rows + 1)
-            columns = [desc[0] for desc in cursor.description] if cursor.description else []
-
-            if len(fetched_rows) > max_rows:
-                fetched_rows = fetched_rows[:max_rows]
-                warnings = [f"Result truncated to max_rows={max_rows}."]
-            else:
-                warnings = []
-
-            result_df = pd.DataFrame(fetched_rows, columns=columns)
-
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.OK,
-                data=result_df,
-                metadata={
-                    "query": raw_query,
-                    "row_count": len(result_df),
-                    "window": str(request.window),
-                    "timeout_seconds": timeout_sec,
-                },
-                limitations=["Custom SQL execution; verify query logic independently."],
-                warnings=warnings,
-            )
+            max_rows = int(request.params.get("max_rows", 5000))
+            timeout_sec = float(request.params.get("timeout_seconds", 5.0))
+        except (TypeError, ValueError):
+            return reply(AnalysisStatus.INVALID_PARAMS, "max_rows and timeout_seconds must be numbers.")
+        try:
+            df, warnings = self._sql_sandbox().run(raw_query, max_rows=max_rows, timeout_sec=timeout_sec)
+        except SQLPolicyError as e:
+            return reply(AnalysisStatus.INVALID_PARAMS, str(e))
         except sqlite3.OperationalError as e:
             if "interrupted" in str(e).lower():
-                return AnalysisResult(
-                    request_id=request.request_id,
-                    operation="custom_query",
-                    status=AnalysisStatus.ERROR,
-                    data=None,
-                    error_message=f"Query execution timed out after {timeout_sec}s.",
-                )
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.ERROR,
-                data=None,
-                error_message=f"SQL error: {str(e)}",
-            )
+                return reply(AnalysisStatus.ERROR, f"Query execution timed out after {timeout_sec}s.")
+            return reply(AnalysisStatus.ERROR, f"SQL error: {e}")
         except Exception as e:
-            return AnalysisResult(
-                request_id=request.request_id,
-                operation="custom_query",
-                status=AnalysisStatus.ERROR,
-                data=None,
-                error_message=f"SQL error: {str(e)}",
-            )
-        finally:
-            conn.close()
-
+            return reply(AnalysisStatus.ERROR, f"SQL error: {e}")
+        return reply(
+            AnalysisStatus.OK, data=df,
+            metadata={"query": raw_query, "row_count": len(df), "window": str(request.window), "timeout_seconds": timeout_sec},
+            limitations=["Custom SQL execution; verify query logic independently."], warnings=warnings,
+        )

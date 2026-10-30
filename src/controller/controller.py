@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from analytics.executor import AnalyticsExecutor
-from analytics.models import AnalysisRequest, AnalysisResult, TimeWindow
+from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus, TimeWindow
 from controller.capability_catalogue import CONTROLLED_OPERATIONS, validate_analysis_plan
 from controller.llm_client import LLMClient, create_llm_client
 from controller.prompts import (
@@ -44,6 +44,10 @@ from investigation.testability import assess_testability
 logger = logging.getLogger(__name__)
 
 
+class BudgetExceeded(RuntimeError):
+    """Raised when the LLM-call or analysis budget would be exceeded."""
+
+
 class InvestigationController:
     """Orchestrates the AI investigation loop over an investigation state."""
 
@@ -53,6 +57,7 @@ class InvestigationController:
         llm_client: Optional[LLMClient] = None,
         max_iterations: int = 5,
         max_analyses: int = 10,
+        max_llm_calls: Optional[int] = None,
         support_policy: Optional[SupportPolicy] = None,
     ) -> None:
         self.executor = executor
@@ -61,6 +66,15 @@ class InvestigationController:
         self.max_iterations = max_iterations
         self.max_analyses = max_analyses
         self.analyses_executed_count = 0
+        self.max_llm_calls = max_llm_calls if max_llm_calls is not None else 4 * max_analyses + 10
+        self.llm_calls = 0
+
+    def _llm(self, **kwargs: Any) -> Any:
+        """Every model call goes through here so the call budget is enforced in one place."""
+        if self.llm_calls >= self.max_llm_calls:
+            raise BudgetExceeded(f"LLM call budget exhausted ({self.max_llm_calls}).")
+        self.llm_calls += 1
+        return self.llm_client.generate_structured(**kwargs)
 
     # ------------------------------------------------------------------ data context
     def build_data_context(self) -> str:
@@ -116,7 +130,7 @@ class InvestigationController:
         prompt = format_hypotheses_prompt(obs, state.testability)
 
         try:
-            output: HypothesesGenerationOutput = self.llm_client.generate_structured(
+            output: HypothesesGenerationOutput = self._llm(
                 prompt=prompt,
                 schema=HypothesesGenerationOutput,
                 system_prompt=SYSTEM_INVESTIGATION_PROMPT,
@@ -170,7 +184,7 @@ class InvestigationController:
         )
 
         try:
-            decision: AnalysisDecision = self.llm_client.generate_structured(
+            decision: AnalysisDecision = self._llm(
                 prompt=prompt,
                 schema=AnalysisDecision,
                 system_prompt=SYSTEM_INVESTIGATION_PROMPT,
@@ -219,6 +233,12 @@ class InvestigationController:
     ) -> AnalysisResult:
         """Construct an AnalysisRequest from the decision and execute via AnalyticsExecutor."""
         obs = state.investigation.observation
+        if self.analyses_executed_count >= self.max_analyses:       # also guards callers that bypass the loop
+            state._record_event(event_type=HistoryEventType.DIRECTION_CHANGED, title="Analysis Budget Exceeded",
+                                description=f"Refused to run '{decision.operation}': {self.max_analyses} analyses already executed.")
+            return AnalysisResult(request_id="budget", operation=decision.operation, status=AnalysisStatus.INVALID_PARAMS,
+                                  data=None, error_message="Analysis budget exhausted.")
+        decision = decision.model_copy(update={"operation": decision.operation.strip().lower()})
 
         # Select window (period-comparison operations always get the baseline window)
         spec = CONTROLLED_OPERATIONS.get(decision.operation.strip().lower())
@@ -276,7 +296,7 @@ class InvestigationController:
         )
 
         try:
-            interp: EvidenceInterpretation = self.llm_client.generate_structured(
+            interp: EvidenceInterpretation = self._llm(
                 prompt=prompt,
                 schema=EvidenceInterpretation,
                 system_prompt=SYSTEM_INVESTIGATION_PROMPT,
@@ -455,7 +475,7 @@ class InvestigationController:
             if state.investigation.status in (InvestigationStatus.CONCLUDED, InvestigationStatus.STOPPED_INSUFFICIENT_EVIDENCE):
                 break
 
-            if self.analyses_executed_count >= self.max_analyses:
+            if self.llm_calls >= self.max_llm_calls or self.analyses_executed_count >= self.max_analyses:
                 state.stop_insufficient_evidence(
                     reason="Analysis execution budget limit reached.",
                     missing_information_summary=f"Reached maximum allowed analyses ({self.max_analyses}) before all hypotheses were resolved.",

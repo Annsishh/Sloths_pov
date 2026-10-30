@@ -8,7 +8,8 @@ or system execution is prohibited.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+import re
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Set, Tuple
 
 
 @dataclass
@@ -29,6 +30,8 @@ class OperationSpec:
     needs_comparison_window: bool = False
     # The controller may extend the window backwards by params["lookback_days"] (history for spikes/change points).
     supports_lookback: bool = False
+    # Closed vocabularies for string parameters, e.g. {"table": {"orders", "events"}}.
+    allowed_values: Dict[str, FrozenSet[str]] = field(default_factory=dict)
     # Extra per-operation parameter checks: params -> error message or None.
     extra_validator: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None
 
@@ -80,6 +83,9 @@ def _validate_retention(p: Dict[str, Any]) -> Optional[str]:
         return "cohort_period must be 'day', 'week' or 'month'."
     return None
 
+
+QUERYABLE_TABLES = frozenset({"orders", "events", "sessions"})
+AGGREGATIONS = frozenset({"count", "sum", "mean", "rate", "std", "median"})
 
 # Bounded catalogue of operations exposed to the investigation controller
 CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
@@ -354,6 +360,54 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
     ),
 }
 
+# Closed vocabularies applied to every operation that accepts the parameter (set after the catalogue is defined).
+_VOCAB = {
+    "table": QUERYABLE_TABLES, "aggregation": AGGREGATIONS, "freq": frozenset({"D", "W"}),
+    "time_column": frozenset({"timestamp"}), "order_status": frozenset({"completed", "failed"}),
+}
+for _spec in CONTROLLED_OPERATIONS.values():
+    for _param, _vals in _VOCAB.items():
+        if _param in _spec.allowed_params:
+            _spec.allowed_values.setdefault(_param, _vals)
+
+
+_SAFE_STRING = re.compile(r"^[A-Za-z0-9_ .:+\-]{0,200}$")
+MAX_LIST_ITEMS = 50
+
+
+def unsafe_string_reason(value: str) -> Optional[str]:
+    """Why a model-supplied string must not be passed to tools (paths, ground-truth names, odd characters)."""
+    if "ground_truth" in value.lower() or "ground-truth" in value.lower() or "groundtruth" in value.lower():
+        return "references ground-truth data"
+    if ".." in value or "/" in value or "\\" in value:
+        return "contains a path separator or traversal"
+    if not _SAFE_STRING.match(value):
+        return "contains characters outside [A-Za-z0-9_ .:+-] or is longer than 200 characters"
+    return None
+
+
+def _check_param_values(op: str, spec: "OperationSpec", params: Dict[str, Any]) -> Optional[str]:
+    for key, val in params.items():
+        values = val if isinstance(val, list) else [val]
+        if isinstance(val, list) and len(val) > MAX_LIST_ITEMS:
+            return f"Parameter '{key}' has {len(val)} items; at most {MAX_LIST_ITEMS} allowed."
+        for v in values:
+            if isinstance(v, bool) or v is None:
+                continue
+            if isinstance(v, str):
+                why = unsafe_string_reason(v)
+                if why:
+                    return f"Parameter '{key}' value {v[:40]!r} is not permitted: {why}."
+            elif isinstance(v, (int, float)):
+                if v != v or v in (float("inf"), float("-inf")):
+                    return f"Parameter '{key}' must be a finite number."
+            else:
+                return f"Parameter '{key}' contains an unsupported value type {type(v).__name__}."
+        allowed = spec.allowed_values.get(key)
+        if allowed is not None and isinstance(val, str) and val not in allowed:
+            return f"Parameter '{key}' must be one of {sorted(allowed)}; got {val!r}."
+    return None
+
 
 # Columns a filter may reference, with the value types they accept.
 ALLOWED_FILTER_COLUMNS = {
@@ -428,11 +482,17 @@ def validate_analysis_plan(
         if key not in spec.allowed_params:
             return False, f"Parameter '{key}' is not recognized for operation '{op_clean}'."
         expected_type = spec.allowed_params[key]
+        if isinstance(val, bool) and expected_type in (int, float):
+            return False, f"Parameter '{key}' has invalid type bool; expected {expected_type}."
         if not isinstance(val, expected_type):
             return False, (
                 f"Parameter '{key}' has invalid type {type(val).__name__}; "
                 f"expected {expected_type}."
             )
+
+    value_err = _check_param_values(op_clean, spec, params)
+    if value_err:
+        return False, value_err
 
     if spec.extra_validator is not None:
         extra_err = spec.extra_validator(params)

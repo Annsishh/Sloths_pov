@@ -128,3 +128,23 @@ Autonomous-run decision log. Format: phase · question · options · choice · w
     lowers recall for investigators that test broadly. `[REVIEW]`
 11. Scenario tweaks to make effects answerable: seasonal_dip alert now covers the weekend only (the holiday dip stays a world
     feature), 49 days of history; decoy_release gets the stationary, higher-volume world.
+
+## Phase 5
+
+1. **SQL: read-only enforced at the database level.** Tables are exported to a temp SQLite *file* opened with URI `mode=ro` (plus
+   `PRAGMA query_only`, an authorizer, `SQLITE_LIMIT_ATTACHED=0`). Previously the DB was an in-memory copy guarded by an authorizer
+   and regexes. A test proves the `mode=ro` connection alone refuses every write.
+2. **The text that is checked is the text that is executed** (comments replaced by a space, as SQLite tokenises them), and string
+   literals are ignored by the keyword scan, removing false positives such as `WHERE failure_reason = 'update'` and `replace()`.
+3. **Authorizer reads:** schema tables (`sqlite_*`) are denied by name. Whitelisting exported table names broke recursive CTEs
+   (CTE names reach the authorizer as table names); the file only contains investigator tables so this is equivalent. Functions are
+   whitelisted (e.g. `hex`, `randomblob`, `load_extension`, `readfile` denied). `[REVIEW]` function whitelist breadth.
+4. **Limits are clamped inside the sandbox** (rows <= 5000, timeout <= 10 s, query <= 10 000 chars) whatever the caller passes.
+5. **Catalogue:** closed vocabularies for `table`/`aggregation`/`freq`/`time_column`/`order_status`; every string parameter must match
+   `[A-Za-z0-9_ .:+-]{0,200}` with no path separators, `..` or ground-truth names; lists <= 50 items; bool is not an int; NaN/inf
+   rejected. `custom_query` stays outside the catalogue.
+6. **Budgets:** new LLM-call budget (default `4*max_analyses + 10`) enforced in one `_llm` choke point; `execute_analysis` itself now
+   refuses past `max_analyses`; operation names are normalised before dispatch.
+7. `tests/test_source_isolation.py`: `capability_catalogue.py` and `sql_sandbox.py` join the guard-file allowlist (they must name
+   "ground_truth" to block it; the test still forbids them from reading files).
+8. Test speed: the infinite-recursion timeout test monkeypatches the hard cap to 1 s (the real cap, 10 s, is asserted separately).
