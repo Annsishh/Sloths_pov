@@ -63,6 +63,7 @@ def format_analysis_selection_prompt(
     iteration: int,
     max_iterations: int,
     testability: Optional[Dict[str, Any]] = None,
+    data_context: str = "",
 ) -> str:
     """Prompt asking the LLM to select an analytical operation to test a hypothesis."""
     hyp_text = []
@@ -86,6 +87,8 @@ def format_analysis_selection_prompt(
 Metric: {observation.metric_name} (Shift: {observation.absolute_change:+.2f})
 Baseline Window: {observation.baseline_window}
 Comparison Window: {observation.comparison_window}
+
+{data_context}
 
 Current Competing Hypotheses:
 {hyp_summary}

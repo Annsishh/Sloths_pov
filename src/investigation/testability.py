@@ -34,7 +34,7 @@ CATEGORY_REQUIREMENTS: Dict[C, CategoryRequirement] = {
     C.TRACKING_LOSS: CategoryRequirement(("telemetry_vs_backend_reconciliation",), "client telemetry and backend order records"),
     C.PIPELINE_OR_DEFINITION_CHANGE: CategoryRequirement(("pipeline_run_log",), "ETL/pipeline run log and metric-definition change history"),
     C.SEASONALITY_OR_CALENDAR: CategoryRequirement(("seasonal_baseline",), "several prior weeks of history for a same-weekday baseline, plus a holiday/event calendar"),
-    C.THIRD_PARTY_OUTAGE: CategoryRequirement(("failure_reason_breakdown", "time_series"), "order failure reasons over time"),
+    C.THIRD_PARTY_OUTAGE: CategoryRequirement(("failure_reason_breakdown", "spike_detection"), "order failure reasons over time"),
     C.MARKET_OR_COMPETITOR: CategoryRequirement(("external_market_data",), "external market, competitor and campaign data"),
     C.GRADUAL_OR_COHORT_EFFECT: CategoryRequirement(("cohort_retention",), "user signup cohorts with long-run activity"),
     C.DENOMINATOR_EFFECT: CategoryRequirement(("funnel_conversion", "mix_decomposition"), "funnel and segment data"),

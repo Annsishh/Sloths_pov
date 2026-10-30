@@ -6,7 +6,7 @@
   "ground_truth_cause": "Calendar effect: the comparison window covers a weekend and a holiday; same-weekday history shows it is normal.",
   "simulation_window": {
     "start": "2026-09-01T00:00:00+00:00",
-    "end": "2026-10-06T00:00:00+00:00"
+    "end": "2026-10-20T00:00:00+00:00"
   },
   "affected_components": [],
   "affected_dimensions": {},
@@ -18,7 +18,7 @@
   },
   "config_overrides": {
     "weekly_seasonality": 1.0,
-    "num_days": 35,
+    "num_days": 49,
     "holiday_effects": [
       [
         "2026-09-21",
@@ -40,7 +40,7 @@
   },
   "generator_config": {
     "seed": 42,
-    "num_days": 35,
+    "num_days": 49,
     "num_users": 1000,
     "baseline_events_per_user_day": 3.5,
     "baseline_checkout_start_prob": 0.12,

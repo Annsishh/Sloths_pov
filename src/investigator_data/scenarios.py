@@ -277,11 +277,11 @@ def get_seasonal_dip_scenario() -> ScenarioDefinition:
         ),
         ground_truth_cause="Calendar effect: the comparison window covers a weekend and a holiday; same-weekday history shows it is normal.",
         start_date=_START,
-        end_date=_d(2026, 10, 6),
+        end_date=_d(2026, 10, 20),
         expected_observable_effects={"events/orders": "Volume dips on Saturdays/Sundays every week and on the holiday."},
         parameters={"holiday": "2026-09-21"},
-        config_overrides={"weekly_seasonality": 1.0, "num_days": 35, "holiday_effects": [["2026-09-21", 0.4]], "existing_user_share": 0.75},
-        alert=_alert("completed_orders_per_day", ("2026-09-14", "2026-09-19"), ("2026-09-19", "2026-09-22")),
+        config_overrides={"weekly_seasonality": 1.0, "num_days": 49, "holiday_effects": [["2026-09-21", 0.4]], "existing_user_share": 0.75},
+        alert=_alert("completed_orders_per_day", ("2026-09-14", "2026-09-19"), ("2026-09-19", "2026-09-21")),   # weekend only; the holiday is a separate world feature
         expected_answer={"primary_cause": "seasonality_or_calendar", "secondary_causes": [], "decoys": [], "insufficient_evidence": False},
     )
 
@@ -336,12 +336,13 @@ def get_decoy_release_scenario() -> ScenarioDefinition:
         parameters={
             "surge_start": "2026-09-14T00:00:00Z",
             "paid_social_volume_multiplier": 3.0,
-            "paid_social_conversion_rate": 0.012,
+            "paid_social_conversion_rate": 0.03,
             "paid_social_events_multiplier": 0.4,
-            "paid_social_checkout_start_prob": 0.03,
+            "paid_social_checkout_start_prob": 0.075,
             "decoy_release_id": "rel_250",
         },
         releases=rels,
+        config_overrides={"baseline_checkout_start_prob": 0.30, "baseline_order_conversion_rate": 0.20, "existing_user_share": 0.75},
         alert=_alert("orders_per_100_sessions", ("2026-09-01", "2026-09-14"), ("2026-09-14", "2026-10-01")),
         expected_answer={"primary_cause": "traffic_mix_shift", "secondary_causes": [], "decoys": ["code_regression"], "insufficient_evidence": False},
     )

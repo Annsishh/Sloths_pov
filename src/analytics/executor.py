@@ -18,6 +18,7 @@ from typing import Any, Callable, Dict, List, Optional
 import pandas as pd
 
 from analytics.changepoint import change_point
+from analytics.spikes import spike_check
 from analytics.decomposition import mix_shift_decomposition
 from analytics.ratio_metrics import ratio_metric_comparison
 from analytics.seasonality import seasonal_baseline
@@ -56,6 +57,7 @@ class AnalyticsExecutor:
         """Dispatch and execute an analytical request."""
         start_time = time.perf_counter()
         op = request.operation.lower()
+        request = self._normalise(request, op)
 
         # Check for registered custom extensions
         if op in self._custom_handlers:
@@ -132,6 +134,10 @@ class AnalyticsExecutor:
             elif op == "change_point":
                 primary_table = request.params.get("table", "orders")
                 res = change_point(self.loader.load(primary_table), self.loader.load("users"), request)
+
+            elif op == "spike_check":
+                primary_table = request.params.get("table", "orders")
+                res = spike_check(self.loader.load(primary_table), self.loader.load("users"), request)
 
             elif op == "ratio_metric_comparison":
                 res = ratio_metric_comparison(self.loader.load("orders"), self.loader.load("events"), request)
@@ -226,6 +232,23 @@ class AnalyticsExecutor:
                 data=None,
                 error_message=f"Execution error: {str(e)}",
             )
+
+    # Operations whose tools group by `request.dimensions`; the catalogue exposes the same idea as params["breakdown"].
+    _DIMENSION_OPS = {"funnel", "funnel_comparison", "segment", "segment_comparison"}
+
+    @classmethod
+    def _normalise(cls, request: AnalysisRequest, op: str) -> AnalysisRequest:
+        """Reconcile catalogue parameter names with what the tools read (funnel_steps -> steps, breakdown -> dimensions)."""
+        params = dict(request.params)
+        dims = list(request.dimensions)
+        if op in ("funnel", "funnel_comparison") and "steps" not in params and "funnel_steps" in params:
+            params["steps"] = params["funnel_steps"]
+        if op in cls._DIMENSION_OPS and not dims and isinstance(params.get("breakdown"), list):
+            dims = list(params["breakdown"])
+        if params == request.params and dims == request.dimensions:
+            return request
+        from dataclasses import replace
+        return replace(request, params=params, dimensions=dims)
 
     # ------------------------------------------------------------------ extensibility
     def register_operation(

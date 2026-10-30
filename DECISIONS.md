@@ -87,3 +87,44 @@ Autonomous-run decision log. Format: phase · question · options · choice · w
 10. **Validator**: now also flags unexpected columns (the leak found in Phase 1), release/version consistency, and each configured
     knob that left no fingerprint (and vice versa). The temporal check was vectorised (pure speed-up, same rule).
 11. Test runtime: the Phase 3 module shares one 14 s fixture (generates all 12 scenarios once). `[REVIEW]` slow setup.
+
+## Phase 4
+
+1. **Offline verification uses a rule-based reference policy** (`evaluation/mock_policy.py`) behind `MockLLMClient(generator_fn=...)`.
+   It sees only prompt text and tool output (never ground truth) and is deterministic. Its accuracy (5/12 scenarios fully right
+   with 1 run each) is NOT an estimate of any model's ability; every report from it carries a "MOCK RUN" banner. `[REVIEW]` do not
+   quote its numbers.
+2. **A real evaluation can never fall back to the mock.** `resolve_client` raises `EvalConfigError` for `mock` without `--allow-mock`,
+   for a missing API key, or a missing model; `assert_real` re-checks the resolved client (including inside the metering wrapper).
+   The CLI exits with code 3 and prints "REFUSING TO RUN".
+3. **Anthropic client added** (`evaluation/clients.py`, standard library only) alongside the existing OpenAI-compatible client.
+   Token usage comes from the API response; if a client reports none, tokens are estimated as chars/4 and flagged
+   `tokens_estimated`. Cost is computed only when `--price-in/--price-out` are given (never guessed).
+5. **Alert -> Observation** is computed by the harness from investigator tables only (`evaluation/alerts.py`); ground truth is read
+   only by `scoring.py`. A test asserts no prompt contains any ground-truth text and that controller/investigation/analytics never
+   import `evaluation`.
+6. **Scoring.** run_correct = right primary (or right INSUFFICIENT_EVIDENCE with an on-topic data request) AND no unexpected supported
+   cause. Overlapping causes' share error compares the model's normalised code_regression share with the share measured while
+   generating (regression-failed orders vs dropped events). `[REVIEW]` that "measured share" definition is approximate.
+7. **Sweep.** Smallest *reliably* detected effect = smallest effect whose detection rate AND every larger effect's rate is >= 80%
+   (a lucky cell in the middle does not count). Chart is a dependency-free SVG.
+8. **Bugs found by running the harness and fixed:**
+   - `Evidence.window` held a *string* from the controller, which broke serialisation (now coerced to `TimeWindow`);
+   - the catalogue advertised `funnel_steps`/`breakdown` but the funnel tools read `steps`/`dimensions`, so **funnel and
+     funnel_comparison never worked through the catalogue**; funnel also did not implement breakdowns at all (now it does);
+   - `error_analysis` could not break down by `failure_reason` (the tool's headline use) because that dimension was not allowed;
+   - no tool returned a p-value for third_party_outage evidence, so that category could never be SUPPORTED: added `spike_check`
+     (raw per-day p-values) and re-based the category on `spike_detection`;
+   - the model was never shown release ids/tables, so it could not call `release_did`: prompts now include a data context
+     (tables+coverage, release log, flags, event names);
+   - 1-day alert windows made time-based tools useless: `lookback_days` (controller-applied) for time_series/change_point/spike_check;
+   - mix decomposition had no session-level unit: added a derived `sessions` table (not listed as on-disk data).
+9. **Seasonality semantics.** seasonal_baseline emits two p-values: `weekday_pattern` (LOW = real weekday pattern; this is what meets
+   the significance requirement for the seasonality category) and `seasonal_deviation` (LOW = NOT explained by seasonality).
+   Supporting evidence for seasonality therefore needs the first low AND the second high; the SUPPORTED rule only enforces the first,
+   the second is the investigator's job. `[REVIEW]` consider encoding this in the rule.
+10. **BH across a broad investigation is demanding.** An investigator that tests all categories enters ~11-25 tests into one family,
+    so borderline effects (e.g. weekday pattern p=0.02) cannot become SUPPORTED. This is the specified behaviour; noted because it
+    lowers recall for investigators that test broadly. `[REVIEW]`
+11. Scenario tweaks to make effects answerable: seasonal_dip alert now covers the weekend only (the holiday dip stays a world
+    feature), 49 days of history; decoy_release gets the stationary, higher-volume world.

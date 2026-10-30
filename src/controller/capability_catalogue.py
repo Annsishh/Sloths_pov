@@ -27,6 +27,8 @@ class OperationSpec:
     provides: List[str] = field(default_factory=list)
     # Operations that compare two periods always receive the baseline window.
     needs_comparison_window: bool = False
+    # The controller may extend the window backwards by params["lookback_days"] (history for spikes/change points).
+    supports_lookback: bool = False
     # Extra per-operation parameter checks: params -> error message or None.
     extra_validator: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None
 
@@ -148,10 +150,12 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
     "time_series": OperationSpec(
         name="time_series",
         description="Daily or weekly chronological time series of a metric.",
-        allowed_params={"table": str, "time_column": str, "metric_column": str, "aggregation": str, "freq": str, "metric_value": (str, int, float, bool)},
+        allowed_params={"table": str, "time_column": str, "metric_column": str, "aggregation": str, "freq": str, "metric_value": (str, int, float, bool), "lookback_days": int},
         required_params=["aggregation"],
         allowed_dimensions=[],
         example={"table": "events", "aggregation": "count", "freq": "D"},
+        supports_lookback=True,
+        extra_validator=lambda p: _int_in(p, "lookback_days", 1, 365),
         requires_tables=['events', 'users'],
         provides=['time_series'],
     ),
@@ -192,8 +196,9 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         description="Breakdown of transaction and order failures by failure_reason across dimensions.",
         allowed_params={"breakdown": list},
         required_params=[],
-        allowed_dimensions=["device_type", "browser", "acquisition_channel"],
+        allowed_dimensions=["failure_reason", "device_type", "browser", "acquisition_channel"],
         example={"breakdown": ["device_type"]},
+        notes="Include 'failure_reason' in breakdown to see WHICH errors occur (counts and share of failures).",
         requires_tables=['orders', 'users'],
         provides=['failure_reason_breakdown'],
     ),
@@ -207,6 +212,7 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         notes="Needs at least min_weeks (default 2) prior weeks of data before each day; otherwise returns insufficient_data.",
         requires_tables=["events", "users"],
         provides=["seasonal_baseline"],
+        needs_comparison_window=True,
         extra_validator=_validate_seasonal,
     ),
     "mix_shift_decomposition": OperationSpec(
@@ -216,6 +222,7 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         required_params=["metric_column", "metric_value", "breakdown"],
         allowed_dimensions=["browser", "device_type", "acquisition_channel", "country", "plan_tier"],
         example={"table": "orders", "metric_column": "status", "metric_value": "completed", "breakdown": ["acquisition_channel"]},
+        notes="table may be 'orders', 'events' or 'sessions' (derived: one row per session with a boolean 'converted' flag; use it to decompose conversion per session).",
         requires_tables=["orders", "users"],
         provides=["mix_decomposition"],
         needs_comparison_window=True,
@@ -279,14 +286,15 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
     "change_point": OperationSpec(
         name="change_point",
         description="Estimate WHEN a metric shifted (single change point over baseline+comparison windows) with a permutation p-value, and whether the onset looks like a step or a gradual ramp.",
-        allowed_params={"table": str, "time_column": str, "metric_column": str, "aggregation": str, "metric_value": (str, int, float, bool), "min_segment": int, "n_permutations": int},
+        allowed_params={"table": str, "time_column": str, "metric_column": str, "aggregation": str, "metric_value": (str, int, float, bool), "min_segment": int, "n_permutations": int, "lookback_days": int},
         required_params=["aggregation"],
         allowed_dimensions=[],
         example={"table": "orders", "aggregation": "count", "min_segment": 3},
         requires_tables=["events", "users"],
         provides=["change_point_detection"],
         needs_comparison_window=True,
-        extra_validator=lambda p: _int_in(p, "min_segment", 2, 30) or _int_in(p, "n_permutations", 99, 2000),
+        supports_lookback=True,
+        extra_validator=lambda p: _int_in(p, "min_segment", 2, 30) or _int_in(p, "n_permutations", 99, 2000) or _int_in(p, "lookback_days", 1, 365),
     ),
     "release_did": OperationSpec(
         name="release_did",
@@ -320,6 +328,19 @@ CONTROLLED_OPERATIONS: Dict[str, OperationSpec] = {
         requires_tables=["orders", "events"],
         provides=["ratio_metric_comparison"],
         needs_comparison_window=True,
+    ),
+    "spike_check": OperationSpec(
+        name="spike_check",
+        description="Find abnormal periods: for each day, compare the rate of metric_column == metric_value with all other days (raw per-day p-values). Detects short outages and one-off events.",
+        allowed_params={"table": str, "time_column": str, "metric_column": str, "metric_value": (str, int, float, bool), "lookback_days": int},
+        required_params=["metric_column", "metric_value"],
+        allowed_dimensions=[],
+        example={"table": "orders", "metric_column": "status", "metric_value": "failed", "lookback_days": 14},
+        notes="Needs at least 5 daily periods; use lookback_days to extend the 1-day alert window backwards.",
+        requires_tables=["orders", "users"],
+        provides=["spike_detection"],
+        supports_lookback=True,
+        extra_validator=lambda p: _int_in(p, "lookback_days", 1, 365),
     ),
     "feedback_analysis": OperationSpec(
         name="feedback_analysis",

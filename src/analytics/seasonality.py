@@ -132,12 +132,41 @@ def seasonal_baseline(
     if usable["weeks_used"].min() < weeks:
         warnings.append(f"Fewer than the requested {weeks} prior weeks were available for some days (min {int(usable['weeks_used'].min())}).")
 
+    # Is there a weekday pattern at all? Kruskal-Wallis across weekdays in the lookback + comparison range.
+    pattern_p = None
+    weekdays = pd.Series([pd.Timestamp(d).weekday() for d in series.index], index=series.index)
+    groups = [series[weekdays == wd].to_numpy() for wd in range(7) if (weekdays == wd).sum() >= 2]
+    if len(groups) >= 3 and len(set(np.concatenate(groups).tolist())) > 1:
+        pattern_p = float(stats.kruskal(*groups).pvalue)
+
     p_value = None
     if zs:
         zbar = float(np.sum(zs) / math.sqrt(len(zs)))
         p_value = float(2 * (1 - stats.norm.cdf(abs(zbar))))
     else:
         warnings.append("Prior weeks had zero variance; no p-value can be computed.")
+
+    # How much of the baseline->comparison change does seasonality predict? (daily counts/sums only)
+    effect_estimate = None
+    if request.comparison_window is not None and aggregation in ("count", "sum"):
+        base_days = series.reindex(pd.date_range(
+            pd.Timestamp(request.comparison_window.start).tz_convert("UTC").floor("D"),
+            pd.Timestamp(request.comparison_window.end).tz_convert("UTC").floor("D"), freq="D", inclusive="left"))
+        if base_days.notna().sum() >= 1:
+            expected_shift = float(usable["expected"].mean() - base_days.fillna(0.0).mean())
+            sd_pred = float(np.nanmean([max(0.0, (r["upper"] - r["expected"])) / 3.0 for _, r in usable.iterrows()]))
+            effect_estimate = {
+                "value": expected_shift, "method": "seasonal_same_weekday_expected_shift",
+                "se": sd_pred / math.sqrt(max(1, len(usable))),
+                "window": {"start": request.window.start.isoformat(), "end": request.window.end.isoformat()},
+                "metric": f"{aggregation}/day",
+            }
+
+    p_values = {}
+    if p_value is not None:
+        p_values["seasonal_deviation"] = p_value      # LOW => NOT explained by seasonality
+    if pattern_p is not None:
+        p_values["weekday_pattern"] = pattern_p       # LOW => a real weekday pattern exists
 
     return AnalysisResult(
         request_id=request.request_id,
@@ -151,7 +180,8 @@ def seasonal_baseline(
             "observed_mean": float(usable["observed"].mean()),
             "expected_mean": float(usable["expected"].mean()),
             "mean_deviation": float((usable["observed"] - usable["expected"]).mean()),
-            "p_values": {"seasonal_deviation": p_value} if p_value is not None else {},
+            "p_values": p_values,
+            "effect_estimate": effect_estimate,
             "window": str(request.window),
         },
         limitations=[

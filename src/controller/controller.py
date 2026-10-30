@@ -10,6 +10,7 @@ Coordinates:
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from analytics.executor import AnalyticsExecutor
@@ -60,6 +61,37 @@ class InvestigationController:
         self.max_iterations = max_iterations
         self.max_analyses = max_analyses
         self.analyses_executed_count = 0
+
+    # ------------------------------------------------------------------ data context
+    def build_data_context(self) -> str:
+        """Observable facts the model needs to parameterise tools: tables + coverage, release log, feature flags,
+        app versions. Built only from investigator-accessible tables (never ground truth)."""
+        loader = self.executor.loader
+        lines = ["Available data (investigator tables only):"]
+        for name in loader.available_tables():
+            try:
+                cov = loader.time_coverage(name)
+                span = ""
+                if cov:
+                    lo = min(v for k, v in cov.items() if k.endswith("_min"))
+                    hi = max(v for k, v in cov.items() if k.endswith("_max"))
+                    span = f", {lo.date()} to {hi.date()}"
+                lines.append(f"- {name}: {loader.row_count(name)} rows{span}")
+            except Exception:
+                lines.append(f"- {name}")
+        tables = set(loader.available_tables())
+        if "releases" in tables:
+            rel = loader.load("releases")
+            lines.append("Release log (release_id | version | deployed | component):")
+            for _, r in rel.sort_values("deployed_timestamp").iterrows():
+                lines.append(f"  {r['release_id']} | {r['version']} | {r['deployed_timestamp']:%Y-%m-%d %H:%M} UTC | {r['component']}")
+        if "feature_exposures" in tables:
+            keys = sorted(loader.load("feature_exposures")["feature_key"].unique())
+            lines.append(f"Feature flags: {keys}")
+        if "events" in tables:
+            ev = loader.load("events")
+            lines.append(f"Event names: {sorted(ev['event_name'].unique())}")
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------ entry point
     def start_investigation(
@@ -134,6 +166,7 @@ class InvestigationController:
             iteration=iteration,
             max_iterations=self.max_iterations,
             testability=state.testability,
+            data_context=self.build_data_context(),
         )
 
         try:
@@ -195,6 +228,10 @@ class InvestigationController:
         else:
             win = obs.comparison_window
             comp_win = None
+
+        lookback = decision.parameters.get("lookback_days")
+        if spec is not None and spec.supports_lookback and isinstance(lookback, int) and lookback > 0:
+            win = TimeWindow(win.start - timedelta(days=lookback), win.end)
 
         request = AnalysisRequest(
             operation=decision.operation,

@@ -91,6 +91,7 @@ def change_point(primary_df: pd.DataFrame, users_df: pd.DataFrame, request: Anal
         return bad("min_segment must be >= 2.")
 
     start = min(request.window.start, request.comparison_window.start) if request.comparison_window else request.window.start
+    # (the controller already applies params["lookback_days"] to the window start)
     end = max(request.window.end, request.comparison_window.end) if request.comparison_window else request.window.end
     scoped = apply_time_filter(primary_df, time_column, TimeWindow(start, end))
     need = [c for c in request.filters if c in users_df.columns]
@@ -121,6 +122,9 @@ def change_point(primary_df: pd.DataFrame, users_df: pd.DataFrame, request: Anal
         return bad("The series is constant; there is no change point to detect.", AnalysisStatus.INSUFFICIENT_DATA)
 
     r = detect_change_point(full.to_numpy(), min_segment=min_segment, n_permutations=int(p.get("n_permutations", 499)))
+    from analytics.power import mde_means
+    half = len(full) // 2
+    mde = mde_means(float(full.std(ddof=1)), half, len(full) - half)
     onset = full.index[r["change_index"]]
     df = pd.DataFrame({"date": [d.strftime("%Y-%m-%d") for d in full.index], "value": full.to_numpy(),
                        "segment": ["before" if i < r["change_index"] else "after" for i in range(len(full))]})
@@ -136,6 +140,7 @@ def change_point(primary_df: pd.DataFrame, users_df: pd.DataFrame, request: Anal
             "mean_before": r["mean_before"], "mean_after": r["mean_after"], "shift": r["shift"],
             "onset_shape": r["onset_shape"], "ramp_slope_per_day": r["ramp_slope"],
             "p_values": {"change_point_permutation": r["p_value"]},
+            "mde": mde,    # smallest mean shift (metric units) a half/half split would reliably detect
             "n_days": len(full), "window": f"[{start.date()} – {end.date()})",
         },
         limitations=[

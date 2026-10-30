@@ -195,6 +195,15 @@ class Evidence:
     # Deterministic tool estimate of the share of the observed change this evidence explains.
     effect_estimate: Optional[EffectEstimate] = None
 
+    def __post_init__(self) -> None:
+        # Tools report windows as strings ("[2026-09-15 – 2026-10-01)"); store a real TimeWindow so the evidence
+        # serialises losslessly. An unparseable window is dropped rather than poisoning the whole record.
+        if isinstance(self.window, str):
+            try:
+                self.window = window_from_any(self.window)
+            except (ValueError, KeyError):
+                self.window = None
+
     def all_tests(self) -> Dict[str, float]:
         out = dict(self.p_values)
         if self.p_value is not None:

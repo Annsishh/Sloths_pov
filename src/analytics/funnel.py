@@ -21,7 +21,7 @@ from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
 from analytics.utils import apply_time_filter, apply_filters, enrich_with_user_attrs, check_min_sample
 
 
-def compute_funnel(
+def _compute_funnel_core(
     events_df: pd.DataFrame,
     users_df: pd.DataFrame,
     request: AnalysisRequest,
@@ -170,6 +170,47 @@ def compute_funnel(
     )
 
 
+def compute_funnel(
+    events_df: pd.DataFrame,
+    users_df: pd.DataFrame,
+    request: AnalysisRequest,
+) -> AnalysisResult:
+    """Funnel, optionally broken down by `request.dimensions`: one funnel per segment, with the dimension columns first."""
+    dims = list(request.dimensions)
+    if not dims:
+        return _compute_funnel_core(events_df, users_df, request)
+
+    from dataclasses import replace
+    scoped = apply_time_filter(events_df, "timestamp", request.window)
+    need = [c for c in dims if c in users_df.columns and c not in scoped.columns]
+    if need and not scoped.empty:
+        scoped = enrich_with_user_attrs(scoped, users_df, need)
+    missing = [d for d in dims if d not in scoped.columns]
+    if missing:
+        return AnalysisResult(request.request_id, "funnel", AnalysisStatus.INVALID_PARAMS, None,
+                              error_message=f"Breakdown dimension(s) not found: {missing}")
+    parts, warnings, limitations = [], [], []
+    for keys, _ in scoped.groupby(dims, sort=True):
+        keys = keys if isinstance(keys, tuple) else (keys,)
+        sub = replace(request, dimensions=[], filters={**request.filters, **dict(zip(dims, keys))})
+        res = _compute_funnel_core(events_df, users_df, sub)
+        if not res.ok():
+            warnings.append(f"Segment {dict(zip(dims, keys))} skipped: {res.error_message}")
+            continue
+        df = res.data.copy()
+        for i, (d, k) in enumerate(zip(dims, keys)):
+            df.insert(i, d, k)
+        parts.append(df)
+        warnings += [f"{dict(zip(dims, keys))}: {w}" for w in res.warnings]
+        limitations = res.limitations
+    if not parts:
+        return AnalysisResult(request.request_id, "funnel", AnalysisStatus.INSUFFICIENT_DATA, None,
+                              error_message="No segment had enough data for the funnel.")
+    return AnalysisResult(request.request_id, "funnel", AnalysisStatus.OK, pd.concat(parts, ignore_index=True),
+                          metadata={"steps": request.params.get("steps", []), "dimensions": dims, "window": str(request.window)},
+                          limitations=limitations, warnings=warnings)
+
+
 def compare_funnel(
     events_df: pd.DataFrame,
     users_df: pd.DataFrame,
@@ -216,7 +257,7 @@ def compare_funnel(
 
     merged = b_df.merge(
         c_df,
-        on=["step_index", "step_name"],
+        on=list(request.dimensions) + ["step_index", "step_name"],
         suffixes=("_baseline", "_comparison"),
     )
 

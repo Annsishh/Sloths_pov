@@ -24,6 +24,9 @@ import pandas as pd
 from analytics.path_guard import ForbiddenDataPathError, assert_investigator_path
 
 
+# Derived (not on disk) table: one row per session, built from events.
+DERIVED_SESSIONS = "sessions"
+
 # ---------------------------------------------------------------------------
 # Table metadata
 # ---------------------------------------------------------------------------
@@ -262,6 +265,10 @@ class DataLoader:
         if table_name in self._cache:
             return self._cache[table_name]
 
+        if table_name == DERIVED_SESSIONS:
+            self._cache[table_name] = self._derive_sessions()
+            return self._cache[table_name]
+
         if table_name not in CATALOGUE:
             raise KeyError(
                 f"Unknown table '{table_name}'. Available: {list(CATALOGUE.keys())}"
@@ -286,6 +293,21 @@ class DataLoader:
         self._cache[table_name] = df
         return df
 
+    def _derive_sessions(self) -> pd.DataFrame:
+        """One row per session built from events: first-event time, user/device/browser/version, and whether the
+        session contained a checkout start / a tracked order_completed. Lets rate tools use sessions as the unit
+        (conversion = converted sessions / sessions), which matches 'orders per 100 sessions' alerts."""
+        ev = self.load("events")
+        cols = ["session_id", "user_id", "timestamp", "device_type", "browser", "app_version", "checkout_started", "converted"]
+        if ev.empty:
+            return pd.DataFrame({c: pd.Series(dtype="object") for c in cols})
+        g = ev.sort_values("timestamp").groupby("session_id", sort=False)
+        sess = g.agg(user_id=("user_id", "first"), timestamp=("timestamp", "first"), device_type=("device_type", "first"),
+                     browser=("browser", "first"), app_version=("app_version", "first")).reset_index()
+        flags = ev.assign(cs=ev["event_name"] == "checkout_started", cv=ev["event_name"] == "order_completed") \
+                  .groupby("session_id").agg(checkout_started=("cs", "any"), converted=("cv", "any")).reset_index()
+        return sess.merge(flags, on="session_id")[cols]
+
     def load_all(self) -> Dict[str, pd.DataFrame]:
         """Load and return all available tables as a dict."""
         available = self.available_tables()
@@ -293,15 +315,15 @@ class DataLoader:
 
     # ------------------------------------------------------------------ inspection helpers
     def available_tables(self) -> List[str]:
-        """Return names of tables available either in memory or on disk."""
+        """Return names of tables available either in memory or on disk (derived tables are not listed)."""
         if self.data_dir is None:
-            return list(self._cache.keys())
+            return [k for k in self._cache.keys() if k != DERIVED_SESSIONS]
         tables_on_disk = [
             name
             for name, info in CATALOGUE.items()
             if (self.data_dir / info.filename).exists()
         ]
-        return sorted(list(set(tables_on_disk) | set(self._cache.keys())))
+        return sorted(set(tables_on_disk) | (set(self._cache.keys()) - {DERIVED_SESSIONS}))
 
     def table_info(self, table_name: str) -> TableInfo:
         if table_name not in CATALOGUE:
