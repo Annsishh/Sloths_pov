@@ -1,0 +1,73 @@
+{
+  "scenario_id": "third_party_outage",
+  "name": "Payment Processor Outage",
+  "category": "third_party_outage",
+  "description": "On 2026-09-20 between 10:00 and 22:00 UTC the external payment processor was unavailable: ~90% of payment attempts failed with payment_processor_unavailable, on every app version, device and browser.",
+  "ground_truth_cause": "External payment processor outage 2026-09-20 10:00-22:00 UTC.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "payment_processor"
+  ],
+  "affected_dimensions": {
+    "effective_from": "2026-09-20T10:00:00Z",
+    "effective_until": "2026-09-20T22:00:00Z",
+    "scope": "all versions"
+  },
+  "expected_observable_effects": {
+    "orders": "Failed orders with payment_processor_unavailable concentrated in a 12-hour window across all versions."
+  },
+  "parameters": {
+    "order_failure_effects": [
+      {
+        "start": "2026-09-20T10:00:00+00:00",
+        "end": "2026-09-20T22:00:00+00:00",
+        "prob": 0.9,
+        "reason": "payment_processor_unavailable"
+      }
+    ],
+    "effect_size": 0.9
+  },
+  "config_overrides": {
+    "baseline_checkout_start_prob": 0.3,
+    "baseline_order_conversion_rate": 0.2,
+    "existing_user_share": 0.75
+  },
+  "expected_answer": {
+    "primary_cause": "third_party_outage",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 24
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.3,
+    "baseline_order_conversion_rate": 0.2,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.75
+  }
+}

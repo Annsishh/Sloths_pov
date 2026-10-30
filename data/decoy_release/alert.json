@@ -1,0 +1,11 @@
+{
+  "metric": "orders_per_100_sessions",
+  "baseline_window": [
+    "2026-09-01",
+    "2026-09-14"
+  ],
+  "comparison_window": [
+    "2026-09-14",
+    "2026-10-01"
+  ]
+}

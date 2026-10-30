@@ -1,0 +1,11 @@
+{
+  "metric": "completed_orders_per_day",
+  "baseline_window": [
+    "2026-09-15",
+    "2026-09-30"
+  ],
+  "comparison_window": [
+    "2026-09-30",
+    "2026-10-15"
+  ]
+}

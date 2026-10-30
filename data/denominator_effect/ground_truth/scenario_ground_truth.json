@@ -1,0 +1,71 @@
+{
+  "scenario_id": "denominator_effect",
+  "name": "Conversion Rises Because Low-Intent Traffic Fell",
+  "category": "denominator_effect",
+  "description": "Paid-social users are low-intent. On 2026-09-15 the paid-social campaign was cut by ~75%. Per-segment conversion is unchanged, but overall conversion rises because the denominator lost its low converters.",
+  "ground_truth_cause": "Fewer low-intent paid-social signups after 2026-09-15 raised the overall rate (mix/denominator effect); the product did not improve.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "acquisition_funnel",
+    "paid_social"
+  ],
+  "affected_dimensions": {
+    "acquisition_channel": "paid_social",
+    "effective_from": "2026-09-15T00:00:00Z"
+  },
+  "expected_observable_effects": {
+    "users/orders": "paid_social share falls; each segment's own conversion is unchanged; overall conversion rises."
+  },
+  "parameters": {
+    "paid_social_low_intent": true,
+    "paid_social_share": 0.35,
+    "paid_social_conversion_rate": 0.03,
+    "paid_social_events_multiplier": 0.4,
+    "paid_social_checkout_start_prob": 0.075,
+    "paid_social_cut_start": "2026-09-15T00:00:00+00:00",
+    "paid_social_cut_fraction": 0.75
+  },
+  "config_overrides": {
+    "baseline_checkout_start_prob": 0.3,
+    "baseline_order_conversion_rate": 0.2,
+    "existing_user_share": 0.75
+  },
+  "expected_answer": {
+    "primary_cause": "denominator_effect",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.3,
+    "baseline_order_conversion_rate": 0.2,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.75
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "scenario_id": "decoy_release",
+  "name": "Decoy Release During Traffic Mix Shift",
+  "category": "acquisition_shift",
+  "description": "A low-intent paid-social surge starts 2026-09-14 00:00; release v2.5.0 (reporting only) ships at 12:00 the same day and is NOT the cause. The conversion drop is a traffic mix shift.",
+  "ground_truth_cause": "Low-intent paid-social traffic surge from 2026-09-14. Release rel_250 is coincidental and harmless.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "acquisition_funnel",
+    "paid_social"
+  ],
+  "affected_dimensions": {
+    "acquisition_channel": "paid_social",
+    "effective_from": "2026-09-14T00:00:00Z"
+  },
+  "expected_observable_effects": {
+    "users/orders": "paid_social share jumps; segment conversion unchanged; no release effect."
+  },
+  "parameters": {
+    "surge_start": "2026-09-14T00:00:00Z",
+    "paid_social_volume_multiplier": 3.0,
+    "paid_social_conversion_rate": 0.012,
+    "paid_social_events_multiplier": 0.4,
+    "paid_social_checkout_start_prob": 0.03,
+    "decoy_release_id": "rel_250"
+  },
+  "config_overrides": {},
+  "expected_answer": {
+    "primary_cause": "traffic_mix_shift",
+    "secondary_causes": [],
+    "decoys": [
+      "code_regression"
+    ],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.0
+  }
+}

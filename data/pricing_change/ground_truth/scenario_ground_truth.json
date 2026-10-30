@@ -1,0 +1,76 @@
+{
+  "scenario_id": "pricing_change",
+  "name": "Unobserved Price Increase",
+  "category": "pricing_change",
+  "description": "On 2026-09-16 prices were raised. Conversion fell ~30% across every segment, version and browser. No table records pricing, so the cause is not observable.",
+  "ground_truth_cause": "A price increase on 2026-09-16 reduced checkout starts uniformly. Pricing is absent from all observable tables.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "pricing"
+  ],
+  "affected_dimensions": {
+    "effective_from": "2026-09-16T00:00:00Z",
+    "scope": "all users"
+  },
+  "expected_observable_effects": {
+    "events/orders": "Uniform drop in checkout starts and orders after Sept 16; no release, mix or tracking change."
+  },
+  "parameters": {
+    "conversion_effects": [
+      {
+        "start": "2026-09-16T00:00:00+00:00",
+        "multiplier": 0.55
+      }
+    ],
+    "effect_size": 0.45
+  },
+  "config_overrides": {
+    "existing_user_share": 0.75
+  },
+  "expected_answer": {
+    "primary_cause": null,
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": true,
+    "acceptable_data_request_keywords": [
+      "pricing",
+      "price",
+      "policy"
+    ],
+    "untestable_categories": [
+      "pricing_or_policy_change"
+    ]
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.75
+  }
+}

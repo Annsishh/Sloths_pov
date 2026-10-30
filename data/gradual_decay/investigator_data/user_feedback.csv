@@ -1,0 +1,113 @@
+feedback_id,user_id,timestamp,rating,category,comment
+fb_8001,usr_1573,2026-09-01T03:25:52+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8002,usr_2171,2026-09-01T22:03:56+00:00,5,product,Quick and seamless checkout experience.
+fb_8003,usr_2463,2026-09-02T04:24:36+00:00,5,product,Quick and seamless checkout experience.
+fb_8004,usr_2068,2026-09-02T05:39:52+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8005,usr_1414,2026-09-02T12:02:18+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8006,usr_1544,2026-09-02T13:31:49+00:00,5,product,Quick and seamless checkout experience.
+fb_8093,usr_2196,2026-09-02T14:56:16+00:00,4,general,App interface is intuitive and fast.
+fb_8007,usr_2011,2026-09-03T06:03:03+00:00,5,product,Quick and seamless checkout experience.
+fb_8008,usr_1026,2026-09-03T16:10:30+00:00,2,billing,Payment declined unexpectedly at checkout.
+fb_8009,usr_1773,2026-09-03T17:36:20+00:00,2,billing,Payment declined unexpectedly at checkout.
+fb_8010,usr_1600,2026-09-04T12:47:16+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8089,usr_2122,2026-09-04T23:12:30+00:00,5,general,App interface is intuitive and fast.
+fb_8011,usr_2020,2026-09-05T02:28:11+00:00,5,product,Quick and seamless checkout experience.
+fb_8066,usr_1218,2026-09-05T09:39:37+00:00,3,general,App interface is intuitive and fast.
+fb_8012,usr_2284,2026-09-05T17:18:37+00:00,5,product,Quick and seamless checkout experience.
+fb_8013,usr_1855,2026-09-06T13:08:36+00:00,5,product,Quick and seamless checkout experience.
+fb_8014,usr_1758,2026-09-06T18:27:58+00:00,5,product,Quick and seamless checkout experience.
+fb_8016,usr_2453,2026-09-08T00:21:28+00:00,5,product,Quick and seamless checkout experience.
+fb_8015,usr_2101,2026-09-08T03:47:41+00:00,4,product,Quick and seamless checkout experience.
+fb_8074,usr_2248,2026-09-08T11:24:28+00:00,5,general,App interface is intuitive and fast.
+fb_8017,usr_1209,2026-09-08T20:21:25+00:00,5,product,Quick and seamless checkout experience.
+fb_8018,usr_2098,2026-09-09T02:19:15+00:00,5,product,Quick and seamless checkout experience.
+fb_8019,usr_1008,2026-09-09T05:47:06+00:00,4,product,Quick and seamless checkout experience.
+fb_8020,usr_1272,2026-09-09T12:17:30+00:00,5,product,Quick and seamless checkout experience.
+fb_8021,usr_1669,2026-09-09T18:44:35+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8022,usr_1448,2026-09-09T21:31:34+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8071,usr_2209,2026-09-09T23:29:24+00:00,5,general,App interface is intuitive and fast.
+fb_8023,usr_1888,2026-09-10T16:21:56+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8024,usr_1728,2026-09-11T10:43:24+00:00,5,product,Quick and seamless checkout experience.
+fb_8025,usr_1223,2026-09-12T02:06:23+00:00,5,product,Quick and seamless checkout experience.
+fb_8070,usr_1560,2026-09-12T02:19:37+00:00,5,general,App interface is intuitive and fast.
+fb_8083,usr_2189,2026-09-12T18:11:33+00:00,4,general,App interface is intuitive and fast.
+fb_8026,usr_1737,2026-09-13T03:20:26+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8027,usr_1244,2026-09-13T09:00:11+00:00,5,product,Quick and seamless checkout experience.
+fb_8028,usr_1813,2026-09-13T13:34:23+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8029,usr_2079,2026-09-14T20:17:51+00:00,5,product,Quick and seamless checkout experience.
+fb_8030,usr_1006,2026-09-15T03:23:38+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8068,usr_1061,2026-09-15T11:36:59+00:00,4,general,App interface is intuitive and fast.
+fb_8031,usr_1629,2026-09-15T15:30:30+00:00,4,product,Quick and seamless checkout experience.
+fb_8032,usr_1460,2026-09-15T19:41:25+00:00,5,product,Quick and seamless checkout experience.
+fb_8033,usr_2355,2026-09-15T21:12:43+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8098,usr_2411,2026-09-15T22:44:21+00:00,4,general,App interface is intuitive and fast.
+fb_8034,usr_1723,2026-09-15T23:37:34+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8035,usr_1456,2026-09-16T03:52:17+00:00,5,product,Quick and seamless checkout experience.
+fb_8036,usr_2179,2026-09-16T09:30:35+00:00,4,product,Quick and seamless checkout experience.
+fb_8073,usr_2154,2026-09-16T21:06:50+00:00,4,general,App interface is intuitive and fast.
+fb_8091,usr_2167,2026-09-17T00:11:19+00:00,3,general,App interface is intuitive and fast.
+fb_8037,usr_2316,2026-09-17T02:37:33+00:00,5,product,Quick and seamless checkout experience.
+fb_8099,usr_1226,2026-09-18T15:37:34+00:00,5,general,App interface is intuitive and fast.
+fb_8038,usr_1731,2026-09-19T08:27:39+00:00,5,product,Quick and seamless checkout experience.
+fb_8080,usr_2217,2026-09-19T12:02:31+00:00,5,general,App interface is intuitive and fast.
+fb_8039,usr_1223,2026-09-19T16:55:49+00:00,4,product,Quick and seamless checkout experience.
+fb_8042,usr_1791,2026-09-21T01:28:21+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8040,usr_1379,2026-09-21T02:37:59+00:00,4,product,Quick and seamless checkout experience.
+fb_8041,usr_2409,2026-09-21T02:40:10+00:00,5,product,Quick and seamless checkout experience.
+fb_8043,usr_2300,2026-09-21T08:49:05+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8044,usr_2433,2026-09-22T03:27:22+00:00,5,product,Quick and seamless checkout experience.
+fb_8085,usr_1571,2026-09-23T12:27:44+00:00,5,general,App interface is intuitive and fast.
+fb_8084,usr_2037,2026-09-23T19:15:43+00:00,4,general,App interface is intuitive and fast.
+fb_8082,usr_1539,2026-09-23T20:14:05+00:00,5,general,App interface is intuitive and fast.
+fb_8045,usr_2114,2026-09-24T07:05:17+00:00,5,product,Quick and seamless checkout experience.
+fb_8087,usr_1570,2026-09-24T15:02:28+00:00,4,general,App interface is intuitive and fast.
+fb_8046,usr_1700,2026-09-25T05:47:24+00:00,5,product,Quick and seamless checkout experience.
+fb_8088,usr_1501,2026-09-25T06:57:05+00:00,5,general,App interface is intuitive and fast.
+fb_8047,usr_1554,2026-09-25T12:07:28+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8077,usr_1951,2026-09-25T17:58:36+00:00,5,general,App interface is intuitive and fast.
+fb_8048,usr_1007,2026-09-26T17:56:23+00:00,4,product,Quick and seamless checkout experience.
+fb_8079,usr_1176,2026-09-26T20:54:32+00:00,3,general,App interface is intuitive and fast.
+fb_8049,usr_1381,2026-09-27T01:42:37+00:00,5,product,Quick and seamless checkout experience.
+fb_8050,usr_2190,2026-09-28T19:54:38+00:00,5,product,Quick and seamless checkout experience.
+fb_8067,usr_1313,2026-09-29T03:20:59+00:00,3,general,App interface is intuitive and fast.
+fb_8096,usr_1797,2026-09-29T05:02:33+00:00,3,general,App interface is intuitive and fast.
+fb_8051,usr_1609,2026-10-01T11:03:42+00:00,4,product,Quick and seamless checkout experience.
+fb_8075,usr_1091,2026-10-01T12:59:09+00:00,4,general,App interface is intuitive and fast.
+fb_8052,usr_1513,2026-10-01T23:23:09+00:00,5,product,Quick and seamless checkout experience.
+fb_8105,usr_1826,2026-10-01T23:31:30+00:00,5,general,App interface is intuitive and fast.
+fb_8053,usr_1956,2026-10-02T21:32:39+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8054,usr_1905,2026-10-03T02:41:22+00:00,4,product,Quick and seamless checkout experience.
+fb_8055,usr_1047,2026-10-03T11:40:37+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8056,usr_1683,2026-10-04T14:22:18+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8103,usr_2238,2026-10-05T05:55:37+00:00,4,general,App interface is intuitive and fast.
+fb_8102,usr_1045,2026-10-05T09:25:58+00:00,4,general,App interface is intuitive and fast.
+fb_8094,usr_1689,2026-10-06T00:02:06+00:00,4,general,App interface is intuitive and fast.
+fb_8104,usr_2013,2026-10-06T04:44:20+00:00,3,general,App interface is intuitive and fast.
+fb_8107,usr_1075,2026-10-06T21:42:21+00:00,5,general,App interface is intuitive and fast.
+fb_8100,usr_2329,2026-10-07T01:38:39+00:00,4,general,App interface is intuitive and fast.
+fb_8057,usr_1711,2026-10-07T01:53:26+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8058,usr_1947,2026-10-07T02:33:36+00:00,5,product,Quick and seamless checkout experience.
+fb_8081,usr_1120,2026-10-08T00:22:18+00:00,3,general,App interface is intuitive and fast.
+fb_8059,usr_1723,2026-10-08T01:56:09+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8106,usr_1205,2026-10-08T13:17:21+00:00,5,general,App interface is intuitive and fast.
+fb_8069,usr_1914,2026-10-08T15:25:04+00:00,4,general,App interface is intuitive and fast.
+fb_8060,usr_1737,2026-10-08T20:35:48+00:00,5,product,Quick and seamless checkout experience.
+fb_8078,usr_2075,2026-10-09T11:05:30+00:00,5,general,App interface is intuitive and fast.
+fb_8090,usr_1745,2026-10-10T13:11:49+00:00,5,general,App interface is intuitive and fast.
+fb_8092,usr_1036,2026-10-10T15:05:44+00:00,5,general,App interface is intuitive and fast.
+fb_8097,usr_1854,2026-10-12T01:51:07+00:00,4,general,App interface is intuitive and fast.
+fb_8108,usr_1365,2026-10-12T11:31:11+00:00,4,general,App interface is intuitive and fast.
+fb_8101,usr_2303,2026-10-12T17:00:55+00:00,4,general,App interface is intuitive and fast.
+fb_8076,usr_1046,2026-10-13T04:42:03+00:00,5,general,App interface is intuitive and fast.
+fb_8061,usr_1316,2026-10-13T18:59:34+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8112,usr_2498,2026-10-14T05:16:39+00:00,4,general,App interface is intuitive and fast.
+fb_8086,usr_1564,2026-10-14T16:50:16+00:00,4,general,App interface is intuitive and fast.
+fb_8062,usr_1045,2026-10-14T18:10:31+00:00,5,product,Quick and seamless checkout experience.
+fb_8095,usr_1255,2026-10-15T02:39:08+00:00,5,general,App interface is intuitive and fast.
+fb_8063,usr_2263,2026-10-15T03:48:14+00:00,5,product,Quick and seamless checkout experience.
+fb_8110,usr_2273,2026-10-15T08:14:27+00:00,5,general,App interface is intuitive and fast.
+fb_8111,usr_1678,2026-10-15T11:02:22+00:00,5,general,App interface is intuitive and fast.
+fb_8072,usr_1374,2026-10-15T14:14:41+00:00,4,general,App interface is intuitive and fast.
+fb_8109,usr_1765,2026-10-15T17:10:16+00:00,4,general,App interface is intuitive and fast.
+fb_8065,usr_1370,2026-10-15T20:50:46+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8064,usr_2204,2026-10-15T22:33:30+00:00,5,product,Quick and seamless checkout experience.

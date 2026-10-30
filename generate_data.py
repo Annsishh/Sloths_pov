@@ -14,24 +14,25 @@ if str(src_dir) not in sys.path:
 
 from investigator_data.config import GeneratorConfig
 from investigator_data.engine import SyntheticDataEngine
-from investigator_data.scenarios import SCENARIO_REGISTRY
+from investigator_data.scenarios import SCENARIO_REGISTRY, build_config
 from investigator_data.validator import DataValidator
 
 
-def generate_scenario_dataset(scenario_key: str, output_base: Path, seed: int, num_users: int) -> None:
+def generate_scenario_dataset(scenario_key: str, output_base: Path, seed: int, num_users=None) -> None:
     if scenario_key not in SCENARIO_REGISTRY:
         raise ValueError(f"Unknown scenario: {scenario_key}. Supported: {list(SCENARIO_REGISTRY.keys())}")
 
     scenario_def = SCENARIO_REGISTRY[scenario_key]()
-    config = GeneratorConfig(seed=seed, num_users=num_users)
+    config = build_config(scenario_def, seed=seed, num_users=num_users)
 
     print(f"\n==================================================")
     print(f"Generating Scenario: [{scenario_key}] - {scenario_def.name}")
-    print(f"Seed: {seed} | Users: {num_users}")
+    print(f"Seed: {seed} | Users: {config.num_users}")
     print(f"==================================================")
 
     engine = SyntheticDataEngine(config=config, scenario=scenario_def)
     tables = engine.generate_all()
+    config = engine.config
 
     # Validate generated tables
     validator = DataValidator(tables=tables, scenario=scenario_def, config=config)
@@ -61,10 +62,39 @@ def generate_scenario_dataset(scenario_key: str, output_base: Path, seed: int, n
     # 2. Save Ground Truth evaluation metadata (ISOLATED from investigator)
     print(f"\nSaving ground-truth metadata to: {ground_truth_dir}")
     gt_payload = scenario_def.to_ground_truth_dict()
+    gt_payload["measured_effects"] = engine.truth      # counts measured while generating (approximate-share basis)
+    gt_payload["generator_config"] = {k: (list(v) if isinstance(v, tuple) else v) for k, v in vars(config).items()
+                                      if k not in ("start_time",)}
     gt_file = ground_truth_dir / "scenario_ground_truth.json"
     with open(gt_file, "w", encoding="utf-8") as f:
         json.dump(gt_payload, f, indent=2)
     print(f"  - scenario_ground_truth.json (Root cause & injected parameters)")
+
+    # 3. The alert that triggered the investigation: observable-metric spec, NOT ground truth, so it lives beside both folders
+    alert = scenario_def.to_alert_dict()
+    if alert.get("mode") == "worst_adjacent_week":
+        alert = worst_adjacent_week_alert(tables, alert["metric"])
+    with open(scenario_dir / "alert.json", "w", encoding="utf-8") as f:
+        json.dump(alert, f, indent=2)
+    print("  - alert.json (metric + windows that fired the alert)")
+
+
+def worst_adjacent_week_alert(tables, metric):
+    """Pick the adjacent 7-day pair with the largest decline in completed orders per day (a seeded, data-driven alert)."""
+    import pandas as pd
+    orders = tables["orders"]
+    ts = pd.to_datetime(orders.loc[orders["status"] == "completed", "timestamp"], utc=True)
+    daily = ts.dt.floor("D").value_counts().sort_index()
+    days = pd.date_range(daily.index.min(), daily.index.max(), freq="D")
+    daily = daily.reindex(days, fill_value=0)
+    best, best_drop = None, 0.0
+    for i in range(7, len(daily) - 6):
+        before, after = daily.iloc[i - 7:i].mean(), daily.iloc[i:i + 7].mean()
+        if before > 0 and (before - after) / before > best_drop:
+            best, best_drop = i, (before - after) / before
+    i = best if best is not None else 7
+    f = lambda d: d.strftime("%Y-%m-%d")
+    return {"metric": metric, "baseline_window": [f(days[i - 7]), f(days[i])], "comparison_window": [f(days[i]), f(days[min(i + 7, len(days) - 1)] + pd.Timedelta(days=1))]}
 
 
 def main():
@@ -96,8 +126,8 @@ def main():
     parser.add_argument(
         "--users",
         type=int,
-        default=1000,
-        help="Number of users to simulate (default: 1000)",
+        default=None,
+        help="Number of users to simulate (default: the scenario's own world, normally 1000)",
     )
 
     args = parser.parse_args()

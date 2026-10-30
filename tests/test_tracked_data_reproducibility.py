@@ -13,7 +13,7 @@ from pandas.testing import assert_frame_equal
 
 from investigator_data.config import GeneratorConfig
 from investigator_data.engine import SyntheticDataEngine
-from investigator_data.scenarios import SCENARIO_REGISTRY
+from investigator_data.scenarios import ALERT_METRICS, SCENARIO_REGISTRY, build_config
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 SEED, USERS = 42, 1000  # generate_data.py defaults used for the tracked files
@@ -25,7 +25,8 @@ def test_tracked_dataset_matches_regeneration(scenario):
     if not base.is_dir():
         pytest.fail(f"tracked dataset missing for scenario '{scenario}'")
     scen = SCENARIO_REGISTRY[scenario]()
-    tables = SyntheticDataEngine(GeneratorConfig(seed=SEED, num_users=USERS), scen).generate_all()
+    engine = SyntheticDataEngine(build_config(scen, seed=SEED), scen)
+    tables = engine.generate_all()
 
     for name, fresh in tables.items():
         on_disk = pd.read_csv(base / "investigator_data" / f"{name}.csv")
@@ -34,4 +35,9 @@ def test_tracked_dataset_matches_regeneration(scenario):
         assert_frame_equal(on_disk, roundtrip, check_exact=False, rtol=1e-9, obj=f"{scenario}/{name}")
 
     gt = json.loads((base / "ground_truth" / "scenario_ground_truth.json").read_text(encoding="utf-8"))
+    measured = gt.pop("measured_effects")           # written by generate_data from the generator's own counters
+    gt.pop("generator_config")
     assert gt == json.loads(json.dumps(scen.to_ground_truth_dict()))
+    assert measured == engine.truth
+    alert = json.loads((base / "alert.json").read_text(encoding="utf-8"))
+    assert alert["metric"] in ALERT_METRICS and "baseline_window" in alert and "comparison_window" in alert

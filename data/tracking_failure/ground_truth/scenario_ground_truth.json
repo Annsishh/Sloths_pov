@@ -27,6 +27,43 @@
     "tracking_drop_start": "2026-09-18T00:00:00Z",
     "dropped_event": "order_completed",
     "affected_browser": "Safari",
-    "drop_probability": 0.9
+    "drop_probability": 0.9,
+    "effect_size": 0.9
+  },
+  "config_overrides": {},
+  "expected_answer": {
+    "primary_cause": "tracking_loss",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 77,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.0
   }
 }

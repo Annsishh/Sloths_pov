@@ -1,0 +1,11 @@
+{
+  "metric": "order_success_rate",
+  "baseline_window": [
+    "2026-09-19",
+    "2026-09-20"
+  ],
+  "comparison_window": [
+    "2026-09-20",
+    "2026-09-21"
+  ]
+}

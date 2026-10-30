@@ -1,0 +1,70 @@
+{
+  "scenario_id": "seasonal_dip",
+  "name": "Weekend Seasonality Dip",
+  "category": "seasonality_or_calendar",
+  "description": "Strong weekly seasonality (weekends ~30% of weekdays) plus a public-holiday dip on 2026-09-21. An alert fires comparing a weekend/holiday window with the preceding Monday-Thursday.",
+  "ground_truth_cause": "Calendar effect: the comparison window covers a weekend and a holiday; same-weekday history shows it is normal.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-06T00:00:00+00:00"
+  },
+  "affected_components": [],
+  "affected_dimensions": {},
+  "expected_observable_effects": {
+    "events/orders": "Volume dips on Saturdays/Sundays every week and on the holiday."
+  },
+  "parameters": {
+    "holiday": "2026-09-21"
+  },
+  "config_overrides": {
+    "weekly_seasonality": 1.0,
+    "num_days": 35,
+    "holiday_effects": [
+      [
+        "2026-09-21",
+        0.4
+      ]
+    ],
+    "existing_user_share": 0.75
+  },
+  "expected_answer": {
+    "primary_cause": "seasonality_or_calendar",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 35,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 1.0,
+    "holiday_effects": [
+      [
+        "2026-09-21",
+        0.4
+      ]
+    ],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.75
+  }
+}

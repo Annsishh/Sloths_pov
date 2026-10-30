@@ -1,0 +1,73 @@
+{
+  "scenario_id": "overlapping_causes",
+  "name": "Mobile Regression Plus Safari Tracking Gap",
+  "category": "overlapping_causes",
+  "description": "From 2026-09-15 two things go wrong together: release v2.4.0 breaks mobile checkout for part of the orders (real revenue loss), and a tracking bug drops order_completed events on Safari (measurement loss only). Both depress tracked orders.",
+  "ground_truth_cause": "(1) mobile checkout regression in v2.4.0 (real loss); (2) Safari telemetry loss (measurement artifact).",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "mobile_checkout",
+    "analytics_sdk"
+  ],
+  "affected_dimensions": {
+    "device_type": "mobile",
+    "browser": "Safari",
+    "effective_from": "2026-09-15T10:00:00Z"
+  },
+  "expected_observable_effects": {
+    "orders": "Mobile failures with payment_gateway_timeout on v2.4.0",
+    "events": "Safari order_completed events missing while Safari backend orders are fine"
+  },
+  "parameters": {
+    "release_id": "rel_240",
+    "release_version": "v2.4.0",
+    "deploy_time": "2026-09-15T10:00:00Z",
+    "mobile_order_failure_prob": 0.5,
+    "tracking_drop_start": "2026-09-15T10:00:00Z",
+    "dropped_event": "order_completed",
+    "affected_browser": "Safari",
+    "drop_probability": 0.9
+  },
+  "config_overrides": {},
+  "expected_answer": {
+    "primary_cause": "code_regression",
+    "secondary_causes": [
+      "tracking_loss"
+    ],
+    "decoys": [],
+    "insufficient_evidence": false,
+    "shares_source": "measured_effects"
+  },
+  "measured_effects": {
+    "regression_failed_orders": 58,
+    "tracking_dropped_events": 72,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.0
+  }
+}

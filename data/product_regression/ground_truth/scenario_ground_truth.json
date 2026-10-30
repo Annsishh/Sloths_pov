@@ -2,8 +2,8 @@
   "scenario_id": "product_regression",
   "name": "Mobile Checkout Gateway Bug",
   "category": "product_regression",
-  "description": "Release v2.4.0 deployed on 2026-09-15 introduced a bug in the mobile checkout payment gateway SDK, causing ~75% of checkout attempts on mobile to fail with payment_gateway_timeout.",
-  "ground_truth_cause": "Release v2.4.0 introduced an unhandled network timeout in the mobile checkout SDK. Mobile orders fail at 75% rate starting from deployment timestamp 2026-09-15 10:00:00 UTC.",
+  "description": "Release v2.4.0 deployed on 2026-09-15 introduced a bug in the mobile checkout payment gateway SDK, causing ~75% of checkout attempts on mobile sessions running v2.4.0 or later to fail with payment_gateway_timeout. Mobile users adopt the new app version gradually.",
+  "ground_truth_cause": "Release v2.4.0 introduced an unhandled network timeout in the mobile checkout SDK. Mobile orders from app version >= v2.4.0 fail at 75% rate; users upgrade over ~2 days after 2026-09-15 10:00 UTC.",
   "simulation_window": {
     "start": "2026-09-01T00:00:00+00:00",
     "end": "2026-10-01T00:00:00+00:00"
@@ -29,6 +29,43 @@
     "release_version": "v2.4.0",
     "deploy_time": "2026-09-15T10:00:00Z",
     "mobile_order_failure_prob": 0.75,
+    "effect_size": 0.75,
     "negative_feedback_boost": 0.25
+  },
+  "config_overrides": {},
+  "expected_answer": {
+    "primary_cause": "code_regression",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 84,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.0
   }
 }

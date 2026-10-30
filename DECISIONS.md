@@ -56,3 +56,34 @@ Autonomous-run decision log. Format: phase · question · options · choice · w
 6. **Edge sweep** is a parametrised test over EVERY catalogue operation x {empty tables, single-day window, no-data window}
    asserting a structured status instead of an exception. It passed without needing further fixes beyond those made in
    Phase 1/2a.
+
+## Phase 3
+
+1. **Weekly seasonality is ON by default for every scenario** (`weekly_seasonality=0.5`), not only baseline. Baseline claimed
+   seasonality it did not have; a world where only baseline has it would make baseline-vs-scenario comparisons meaningless.
+   Consequence: all tracked datasets were regenerated; the original four scenarios' cause parameters are unchanged and their
+   quantitative tests still pass. `[REVIEW]` "Defaults reproduce current scenarios" holds for causes, not byte-for-byte data.
+2. **Release timing derives from the scenario's release log** (`ScenarioDefinition.releases`); app_version of a session =
+   latest release deployed at least `adoption_lag` earlier. This removed the hard-coded 2026-09-15 10:00 (and 09-08 14:00) cutoffs
+   and exposed an existing inconsistency (the generator switched to v2.3.9 on Sep 8 while the release table said Sep 9).
+   Feature rollout `one_click_checkout` now follows the scenario's mobile_checkout release.
+3. **Mobile users adopt new versions gradually** (`app_adoption_days_mobile`, exponential, default 2 d; web = instant). Without
+   partial adoption there is no unexposed group and difference-in-differences is impossible. The regression is now tied to
+   *app version >= release*, so it is also inherited by v2.4.1 (as a real bug would be). `[REVIEW]` changes regression dynamics.
+4. **Hidden generator artifact found: legacy world has every user sign up inside the window**, so activity grows ~50x over a month
+   and confounds any pre/post comparison (a 45% price-driven drop was invisible). New knob `existing_user_share`; the six new
+   scenarios that need a stationary world set 0.75; the original four, decoy_release and overlapping_causes keep the legacy world.
+   `[REVIEW]` consider enabling it everywhere.
+5. **Separate RNG stream (`aux`) for realism knobs** so toggling a knob does not reshuffle unrelated draws.
+6. **Alert spec lives beside, not inside, ground_truth** (`data/<scn>/alert.json`): the metric and windows that fired the alert
+   are what monitoring would show, and the harness needs them to build the Observation. A test asserts it carries no cause info.
+7. **Ground truth gains `expected_answer`, `measured_effects` (counters recorded while generating, the basis for the
+   overlapping-causes approximate shares) and the resolved `generator_config`.** The reproducibility test was updated for these.
+8. **Scenario-specific volume boosts** (`baseline_checkout_start_prob` 0.30 / conversion 0.20 for denominator_effect and
+   third_party_outage) so order counts are large enough for the effect to be statistically visible; outage window widened to
+   12 h at 90% after 6 failures proved too few to detect.
+9. **Denominator effect implemented as campaign traffic switched off** (sessions of paid_social users thinned after the date),
+   not as fewer signups: with a stationary user base most paid-social users pre-exist the cut.
+10. **Validator**: now also flags unexpected columns (the leak found in Phase 1), release/version consistency, and each configured
+    knob that left no fingerprint (and vice versa). The temporal check was vectorised (pure speed-up, same rule).
+11. Test runtime: the Phase 3 module shares one 14 s fixture (generates all 12 scenarios once). `[REVIEW]` slow setup.

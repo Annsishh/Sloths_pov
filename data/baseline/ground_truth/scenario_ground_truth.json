@@ -2,7 +2,7 @@
   "scenario_id": "baseline",
   "name": "Healthy Baseline SaaS Operations",
   "category": "baseline",
-  "description": "Normal, steady-state user activity, conversion rates, and feedback.",
+  "description": "Normal, steady-state user activity, conversion rates, and feedback, with weekly seasonality.",
   "ground_truth_cause": "None. Normal business operations with typical variance.",
   "simulation_window": {
     "start": "2026-09-01T00:00:00+00:00",
@@ -12,9 +12,45 @@
   "affected_dimensions": {},
   "expected_observable_effects": {
     "order_completion_rate": "Stable around 90-95% of attempted orders",
-    "daily_active_users": "Stable weekly seasonality without persistent drops",
+    "daily_active_users": "Weekly seasonality (quieter weekends) without persistent drops",
     "feedback_rating": "Average rating ~4.1 to 4.4",
     "event_tracking": "Consistent session-to-order funnel across all browsers and devices"
   },
-  "parameters": {}
+  "parameters": {},
+  "config_overrides": {},
+  "expected_answer": {
+    "primary_cause": "natural_variation",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 30,
+    "num_users": 1000,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.0
+  }
 }

@@ -1,0 +1,104 @@
+feedback_id,user_id,timestamp,rating,category,comment
+fb_8074,usr_1391,2026-09-06T14:35:26+00:00,5,general,App interface is intuitive and fast.
+fb_8002,usr_1352,2026-09-07T17:03:36+00:00,5,product,Quick and seamless checkout experience.
+fb_8001,usr_1664,2026-09-07T17:21:47+00:00,5,product,Quick and seamless checkout experience.
+fb_8003,usr_1436,2026-09-08T02:41:49+00:00,2,billing,Payment declined unexpectedly at checkout.
+fb_8004,usr_1090,2026-09-09T03:48:42+00:00,5,product,Quick and seamless checkout experience.
+fb_8005,usr_1291,2026-09-09T06:04:21+00:00,4,product,Quick and seamless checkout experience.
+fb_8006,usr_1172,2026-09-09T19:33:52+00:00,5,product,Quick and seamless checkout experience.
+fb_8007,usr_1341,2026-09-10T14:17:31+00:00,5,product,Quick and seamless checkout experience.
+fb_8008,usr_1659,2026-09-12T04:37:07+00:00,5,product,Quick and seamless checkout experience.
+fb_8083,usr_1859,2026-09-12T09:11:09+00:00,5,general,App interface is intuitive and fast.
+fb_8009,usr_1023,2026-09-13T12:15:07+00:00,4,product,Quick and seamless checkout experience.
+fb_8010,usr_1428,2026-09-14T04:50:08+00:00,5,product,Quick and seamless checkout experience.
+fb_8079,usr_1241,2026-09-14T07:30:38+00:00,4,general,App interface is intuitive and fast.
+fb_8011,usr_1308,2026-09-15T00:00:48+00:00,5,product,Quick and seamless checkout experience.
+fb_8073,usr_1789,2026-09-16T14:38:16+00:00,4,general,App interface is intuitive and fast.
+fb_8012,usr_1857,2026-09-17T18:10:05+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8013,usr_1123,2026-09-17T21:26:01+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8014,usr_1738,2026-09-18T04:18:47+00:00,4,product,Quick and seamless checkout experience.
+fb_8015,usr_1142,2026-09-18T13:25:21+00:00,5,product,Quick and seamless checkout experience.
+fb_8080,usr_1971,2026-09-18T14:04:47+00:00,5,general,App interface is intuitive and fast.
+fb_8016,usr_1865,2026-09-18T15:08:49+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8017,usr_1868,2026-09-18T18:24:32+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8018,usr_1791,2026-09-18T23:55:24+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8089,usr_1124,2026-09-19T00:42:46+00:00,4,general,App interface is intuitive and fast.
+fb_8019,usr_1590,2026-09-19T06:47:21+00:00,4,product,Quick and seamless checkout experience.
+fb_8078,usr_1770,2026-09-19T17:05:59+00:00,4,general,App interface is intuitive and fast.
+fb_8081,usr_1940,2026-09-19T18:28:33+00:00,4,general,App interface is intuitive and fast.
+fb_8020,usr_1369,2026-09-19T21:06:05+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8088,usr_1127,2026-09-20T01:36:55+00:00,4,general,App interface is intuitive and fast.
+fb_8085,usr_1488,2026-09-20T05:28:47+00:00,5,general,App interface is intuitive and fast.
+fb_8021,usr_1657,2026-09-20T11:49:15+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8022,usr_1622,2026-09-21T07:44:52+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8023,usr_1835,2026-09-21T14:58:05+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8092,usr_1290,2026-09-21T16:20:38+00:00,4,general,App interface is intuitive and fast.
+fb_8084,usr_1520,2026-09-21T21:32:12+00:00,4,general,App interface is intuitive and fast.
+fb_8024,usr_1088,2026-09-21T22:09:19+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8025,usr_1461,2026-09-22T07:42:03+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8026,usr_1708,2026-09-22T08:53:16+00:00,5,product,Quick and seamless checkout experience.
+fb_8027,usr_1257,2026-09-22T09:42:36+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8082,usr_1791,2026-09-23T02:22:30+00:00,4,general,App interface is intuitive and fast.
+fb_8028,usr_1857,2026-09-23T02:47:15+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8029,usr_1031,2026-09-23T04:58:00+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8030,usr_1964,2026-09-23T05:25:44+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8075,usr_1402,2026-09-23T14:24:43+00:00,5,general,App interface is intuitive and fast.
+fb_8032,usr_1536,2026-09-23T16:13:35+00:00,2,billing,Payment declined unexpectedly at checkout.
+fb_8031,usr_1830,2026-09-23T18:48:22+00:00,5,product,Quick and seamless checkout experience.
+fb_8033,usr_1695,2026-09-23T19:03:22+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8034,usr_1821,2026-09-24T11:15:53+00:00,4,product,Quick and seamless checkout experience.
+fb_8036,usr_1352,2026-09-24T14:41:07+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8035,usr_1291,2026-09-24T16:38:39+00:00,5,product,Quick and seamless checkout experience.
+fb_8037,usr_1127,2026-09-25T01:20:34+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8038,usr_1713,2026-09-25T08:19:04+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8039,usr_1685,2026-09-25T13:44:23+00:00,5,product,Quick and seamless checkout experience.
+fb_8041,usr_1407,2026-09-25T16:20:28+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8040,usr_1559,2026-09-25T18:59:49+00:00,5,product,Quick and seamless checkout experience.
+fb_8042,usr_1516,2026-09-25T21:04:17+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8043,usr_1640,2026-09-25T23:16:01+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8044,usr_1349,2026-09-26T00:04:09+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8076,usr_1230,2026-09-26T04:30:23+00:00,4,general,App interface is intuitive and fast.
+fb_8045,usr_1971,2026-09-26T08:22:13+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8046,usr_1374,2026-09-26T11:55:24+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8098,usr_1358,2026-09-26T12:27:26+00:00,4,general,App interface is intuitive and fast.
+fb_8097,usr_1385,2026-09-27T03:10:33+00:00,4,general,App interface is intuitive and fast.
+fb_8093,usr_1806,2026-09-27T04:45:53+00:00,4,general,App interface is intuitive and fast.
+fb_8048,usr_1956,2026-09-27T06:28:32+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8047,usr_1641,2026-09-27T07:53:37+00:00,5,product,Quick and seamless checkout experience.
+fb_8049,usr_1512,2026-09-27T09:04:40+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8050,usr_1517,2026-09-27T13:51:27+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8090,usr_1567,2026-09-27T15:00:05+00:00,5,general,App interface is intuitive and fast.
+fb_8051,usr_1110,2026-09-28T04:10:48+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8052,usr_1939,2026-09-28T09:45:30+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8087,usr_1031,2026-09-28T15:24:41+00:00,5,general,App interface is intuitive and fast.
+fb_8053,usr_1657,2026-09-28T18:32:16+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8054,usr_1848,2026-09-28T18:35:11+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8091,usr_1651,2026-09-28T20:29:39+00:00,4,general,App interface is intuitive and fast.
+fb_8077,usr_1147,2026-09-28T22:59:35+00:00,5,general,App interface is intuitive and fast.
+fb_8055,usr_1070,2026-09-29T07:37:15+00:00,4,product,Quick and seamless checkout experience.
+fb_8056,usr_1194,2026-09-29T07:49:13+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8057,usr_1079,2026-09-29T08:30:31+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8058,usr_1450,2026-09-29T11:10:13+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8099,usr_1217,2026-09-29T11:54:25+00:00,3,general,App interface is intuitive and fast.
+fb_8059,usr_1763,2026-09-29T15:21:34+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8060,usr_1976,2026-09-29T16:12:06+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8061,usr_1597,2026-09-29T16:15:13+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8102,usr_1086,2026-09-29T17:59:58+00:00,5,general,App interface is intuitive and fast.
+fb_8062,usr_1443,2026-09-29T18:03:12+00:00,4,product,Quick and seamless checkout experience.
+fb_8063,usr_1062,2026-09-29T20:30:30+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8064,usr_1264,2026-09-29T23:38:14+00:00,1,billing,Payment declined unexpectedly at checkout.
+fb_8065,usr_1696,2026-09-30T04:56:37+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8066,usr_1103,2026-09-30T05:20:17+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8095,usr_1851,2026-09-30T06:43:34+00:00,4,general,App interface is intuitive and fast.
+fb_8086,usr_1106,2026-09-30T08:08:42+00:00,4,general,App interface is intuitive and fast.
+fb_8068,usr_1699,2026-09-30T11:54:42+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8067,usr_1408,2026-09-30T12:18:11+00:00,5,product,Quick and seamless checkout experience.
+fb_8069,usr_1654,2026-09-30T14:34:22+00:00,2,billing,Payment declined unexpectedly at checkout.
+fb_8100,usr_1266,2026-09-30T18:25:08+00:00,4,general,App interface is intuitive and fast.
+fb_8070,usr_1077,2026-09-30T20:34:32+00:00,2,billing,Checkout timed out while processing payment on mobile app. Very frustrating!
+fb_8096,usr_1762,2026-09-30T21:25:16+00:00,5,general,App interface is intuitive and fast.
+fb_8094,usr_1304,2026-09-30T22:17:27+00:00,3,general,App interface is intuitive and fast.
+fb_8103,usr_1643,2026-09-30T23:01:23+00:00,4,general,App interface is intuitive and fast.
+fb_8071,usr_1828,2026-09-30T23:32:05+00:00,5,product,Quick and seamless checkout experience.
+fb_8101,usr_1240,2026-09-30T23:49:14+00:00,5,general,App interface is intuitive and fast.
+fb_8072,usr_1763,2026-09-30T23:59:25+00:00,1,billing,Checkout timed out while processing payment on mobile app. Very frustrating!

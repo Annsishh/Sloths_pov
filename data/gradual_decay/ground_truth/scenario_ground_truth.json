@@ -1,0 +1,59 @@
+{
+  "scenario_id": "gradual_decay",
+  "name": "Gradual Retention Decay",
+  "category": "gradual_or_cohort_effect",
+  "description": "Engagement erodes continuously: every user's chance of coming back falls with tenure (about 5% per day). There is no release, mix change or tracking issue and no single onset date.",
+  "ground_truth_cause": "Retention-driven decline: older cohorts steadily disengage. No single onset.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-16T00:00:00+00:00"
+  },
+  "affected_components": [],
+  "affected_dimensions": {},
+  "expected_observable_effects": {
+    "events/orders": "Slow monotonic decline in sessions and orders; older cohorts retain worse."
+  },
+  "parameters": {
+    "tenure_decay_rate": 0.05
+  },
+  "config_overrides": {
+    "num_days": 45,
+    "num_users": 1500,
+    "existing_user_share": 0.75
+  },
+  "expected_answer": {
+    "primary_cause": "gradual_or_cohort_effect",
+    "secondary_causes": [],
+    "decoys": [],
+    "insufficient_evidence": false
+  },
+  "measured_effects": {
+    "regression_failed_orders": 0,
+    "tracking_dropped_events": 0,
+    "outage_failed_orders": 0
+  },
+  "generator_config": {
+    "seed": 42,
+    "num_days": 45,
+    "num_users": 1500,
+    "baseline_events_per_user_day": 3.5,
+    "baseline_checkout_start_prob": 0.12,
+    "baseline_order_conversion_rate": 0.08,
+    "baseline_feedback_rate": 0.05,
+    "default_currency": "USD",
+    "noise_level": 0.0,
+    "weekly_seasonality": 0.5,
+    "holiday_effects": [],
+    "effect_size": null,
+    "effect_onset": "step",
+    "effect_ramp_days": 7.0,
+    "late_arrival_rate": 0.0,
+    "late_arrival_mean_hours": 12.0,
+    "duplicate_event_rate": 0.0,
+    "bot_traffic_share": 0.0,
+    "identity_split_share": 0.0,
+    "event_renames": [],
+    "app_adoption_days_mobile": 2.0,
+    "existing_user_share": 0.75
+  }
+}
