@@ -1,0 +1,32 @@
+{
+  "scenario_id": "tracking_failure",
+  "name": "Safari Event Tracking Dropped on Checkout",
+  "category": "tracking_failure",
+  "description": "A JavaScript tracking script update deployed on 2026-09-18 introduced an issue where 'order_completed' analytics events are dropped on Safari browsers (~90% missing in event stream), even though the actual backend orders and revenue succeed normally.",
+  "ground_truth_cause": "Analytics client-side SDK telemetry dropped tracking events on Safari (ITP/cookie or script syntax bug). Actual backend orders succeeded, causing a discrepancy between analytics events and financial orders.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "analytics_sdk",
+    "event_tracking"
+  ],
+  "affected_dimensions": {
+    "browser": "Safari",
+    "event_name": "order_completed",
+    "effective_from": "2026-09-18T00:00:00Z"
+  },
+  "expected_observable_effects": {
+    "events": "order_completed events on Safari drop by ~90% after Sept 18",
+    "orders": "Real backend orders remain normal on Safari, creating a divergence between events and orders tables",
+    "daily_product_metrics": "Total tracked events drop slightly on Safari funnel; financial revenue unaffected",
+    "future_investigation_hook": "Investigator comparing orders table vs events tracking will detect that backend payment logs are intact while telemetry events dropped, pinpointing an instrumentation/analytics bug."
+  },
+  "parameters": {
+    "tracking_drop_start": "2026-09-18T00:00:00Z",
+    "dropped_event": "order_completed",
+    "affected_browser": "Safari",
+    "drop_probability": 0.9
+  }
+}

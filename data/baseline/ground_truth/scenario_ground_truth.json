@@ -1,0 +1,20 @@
+{
+  "scenario_id": "baseline",
+  "name": "Healthy Baseline SaaS Operations",
+  "category": "baseline",
+  "description": "Normal, steady-state user activity, conversion rates, and feedback.",
+  "ground_truth_cause": "None. Normal business operations with typical variance.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [],
+  "affected_dimensions": {},
+  "expected_observable_effects": {
+    "order_completion_rate": "Stable around 90-95% of attempted orders",
+    "daily_active_users": "Stable weekly seasonality without persistent drops",
+    "feedback_rating": "Average rating ~4.1 to 4.4",
+    "event_tracking": "Consistent session-to-order funnel across all browsers and devices"
+  },
+  "parameters": {}
+}

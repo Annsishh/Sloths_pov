@@ -1,0 +1,32 @@
+{
+  "scenario_id": "acquisition_shift",
+  "name": "Paid Social Low-Intent Traffic Surge",
+  "category": "acquisition_shift",
+  "description": "Starting 2026-09-12, an aggressive paid social advertising campaign tripes new user signups from channel 'paid_social', but these users have extremely low intent, high bounce rates, and negligible order conversion (~1% vs baseline 8%).",
+  "ground_truth_cause": "Paid acquisition team launched low-intent ad campaigns on social media. Overall signup volume surges, causing aggregate conversion rate and average engagement per user to plunge despite healthy core product.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "acquisition_funnel",
+    "paid_social"
+  ],
+  "affected_dimensions": {
+    "acquisition_channel": "paid_social",
+    "effective_from": "2026-09-12T00:00:00Z"
+  },
+  "expected_observable_effects": {
+    "users": "Surge in new signups with acquisition_channel='paid_social' from Sept 12 onwards",
+    "events": "Paid social users generate fewer pageviews per session (1-2 pages, high bounce)",
+    "orders": "Overall conversion drops, but segmented by channel, organic/direct/search remain steady",
+    "daily_product_metrics": "New signups up significantly; average revenue per user down"
+  },
+  "parameters": {
+    "surge_start": "2026-09-12T00:00:00Z",
+    "paid_social_volume_multiplier": 3.0,
+    "paid_social_conversion_rate": 0.012,
+    "paid_social_events_multiplier": 0.4,
+    "paid_social_checkout_start_prob": 0.03
+  }
+}

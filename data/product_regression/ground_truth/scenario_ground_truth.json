@@ -1,0 +1,34 @@
+{
+  "scenario_id": "product_regression",
+  "name": "Mobile Checkout Gateway Bug",
+  "category": "product_regression",
+  "description": "Release v2.4.0 deployed on 2026-09-15 introduced a bug in the mobile checkout payment gateway SDK, causing ~75% of checkout attempts on mobile to fail with payment_gateway_timeout.",
+  "ground_truth_cause": "Release v2.4.0 introduced an unhandled network timeout in the mobile checkout SDK. Mobile orders fail at 75% rate starting from deployment timestamp 2026-09-15 10:00:00 UTC.",
+  "simulation_window": {
+    "start": "2026-09-01T00:00:00+00:00",
+    "end": "2026-10-01T00:00:00+00:00"
+  },
+  "affected_components": [
+    "mobile_checkout",
+    "payment_sdk",
+    "release_v2.4.0"
+  ],
+  "affected_dimensions": {
+    "device_type": "mobile",
+    "release_version": "v2.4.0",
+    "effective_from": "2026-09-15T10:00:00Z"
+  },
+  "expected_observable_effects": {
+    "orders": "Sharp spike in status='failed' with failure_reason='payment_gateway_timeout' exclusively on mobile",
+    "daily_product_metrics": "Drop in completed_orders and gross_revenue after Sept 15; failed_orders surges",
+    "user_feedback": "Spike in negative feedback (rating 1-2) with category='billing'/'checkout' on mobile",
+    "releases": "Correlates directly with deployment of release_id 'rel_240' on 2026-09-15"
+  },
+  "parameters": {
+    "release_id": "rel_240",
+    "release_version": "v2.4.0",
+    "deploy_time": "2026-09-15T10:00:00Z",
+    "mobile_order_failure_prob": 0.75,
+    "negative_feedback_boost": 0.25
+  }
+}

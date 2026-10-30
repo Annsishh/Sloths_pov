@@ -1,0 +1,365 @@
+"""InvestigationController: Central AI investigation loop and orchestration engine.
+
+Coordinates:
+- The LLM Client (structured reasoning & interpretation)
+- The Investigation State Model (hypotheses, evidence, history, validation)
+- The Deterministic Analytics Executor (tool execution against investigator data)
+- The Controlled Analytics Capability Catalogue (parameter validation & sandboxing)
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from analytics.executor import AnalyticsExecutor
+from analytics.models import AnalysisRequest, AnalysisResult, TimeWindow
+from controller.capability_catalogue import validate_analysis_plan
+from controller.llm_client import LLMClient, create_llm_client
+from controller.prompts import (
+    SYSTEM_INVESTIGATION_PROMPT,
+    format_analysis_selection_prompt,
+    format_evidence_interpretation_prompt,
+    format_hypotheses_prompt,
+)
+from controller.schemas import (
+    AnalysisDecision,
+    EvidenceInterpretation,
+    HypothesesGenerationOutput,
+)
+from investigation.enums import (
+    ConfidenceLevel,
+    EvidenceStance,
+    HistoryEventType,
+    HypothesisStatus,
+    InferenceType,
+    InvestigationStatus,
+)
+from investigation.models import Evidence, Hypothesis, Observation
+from investigation.state import InvestigationState
+
+logger = logging.getLogger(__name__)
+
+
+class InvestigationController:
+    """Orchestrates the AI investigation loop over an investigation state."""
+
+    def __init__(
+        self,
+        executor: AnalyticsExecutor,
+        llm_client: Optional[LLMClient] = None,
+        max_iterations: int = 5,
+        max_analyses: int = 10,
+    ) -> None:
+        self.executor = executor
+        self.llm_client = llm_client or create_llm_client()
+        self.max_iterations = max_iterations
+        self.max_analyses = max_analyses
+        self.analyses_executed_count = 0
+
+    # ------------------------------------------------------------------ entry point
+    def start_investigation(
+        self,
+        observation: Observation,
+        title: Optional[str] = None,
+    ) -> InvestigationState:
+        """Initialize a new investigation state from a metric observation."""
+        inv_title = title or f"Investigation of {observation.metric_name} deviation"
+        return InvestigationState.create(title=inv_title, observation=observation)
+
+    # ------------------------------------------------------------------ individual loop steps
+    def step_formulate_hypotheses(self, state: InvestigationState) -> List[Hypothesis]:
+        """Ask the LLM to propose at least two competing hypotheses for the observation."""
+        obs = state.investigation.observation
+        prompt = format_hypotheses_prompt(obs)
+
+        try:
+            output: HypothesesGenerationOutput = self.llm_client.generate_structured(
+                prompt=prompt,
+                schema=HypothesesGenerationOutput,
+                system_prompt=SYSTEM_INVESTIGATION_PROMPT,
+            )
+        except Exception as e:
+            logger.error(f"Failed to generate hypotheses: {str(e)}")
+            state.investigation.history.append(
+                state._record_event(
+                    event_type=HistoryEventType.INVESTIGATION_STOPPED,
+                    title="Hypothesis Generation Failed",
+                    description=f"LLM call failed: {str(e)}",
+                )
+            )
+            raise
+
+        created = []
+        for prop in output.hypotheses:
+            h_id = prop.hypothesis_id or f"hyp_{len(state.investigation.hypotheses) + 1}"
+            hyp = state.add_hypothesis(
+                title=prop.title,
+                explanation=prop.explanation,
+                category=prop.category,
+                hypothesis_id=h_id,
+            )
+            created.append(hyp)
+
+        return created
+
+    def step_select_analysis(
+        self,
+        state: InvestigationState,
+        iteration: int,
+    ) -> Optional[AnalysisDecision]:
+        """Ask the LLM to select an analytical operation from the controlled catalogue."""
+        active_hyps = [
+            h for h in state.investigation.hypotheses.values()
+            if h.status in (HypothesisStatus.PROPOSED, HypothesisStatus.ACTIVE)
+        ]
+        if not active_hyps:
+            return None
+
+        evidence_list = list(state.investigation.evidence_store.values())
+        prompt = format_analysis_selection_prompt(
+            observation=state.investigation.observation,
+            hypotheses=active_hyps,
+            evidence_list=evidence_list,
+            iteration=iteration,
+            max_iterations=self.max_iterations,
+        )
+
+        try:
+            decision: AnalysisDecision = self.llm_client.generate_structured(
+                prompt=prompt,
+                schema=AnalysisDecision,
+                system_prompt=SYSTEM_INVESTIGATION_PROMPT,
+            )
+        except Exception as e:
+            logger.error(f"Failed to select analysis: {str(e)}")
+            state._record_event(
+                event_type=HistoryEventType.INVESTIGATION_STOPPED,
+                title="Analysis Selection Failed",
+                description=f"LLM call failed: {str(e)}",
+            )
+            return None
+
+        # Verify hypothesis ID exists
+        if decision.hypothesis_id_to_test not in state.investigation.hypotheses:
+            logger.warning(f"Model referenced non-existent hypothesis: {decision.hypothesis_id_to_test}")
+            state._record_event(
+                event_type=HistoryEventType.DIRECTION_CHANGED,
+                title="Invalid Hypothesis Reference in Analysis Decision",
+                description=f"Model suggested testing non-existent hypothesis '{decision.hypothesis_id_to_test}'.",
+            )
+            return None
+
+        # Validate against controlled capability catalogue
+        is_valid, err_msg = validate_analysis_plan(
+            operation=decision.operation,
+            params=decision.parameters,
+            dimensions=decision.dimensions,
+            filters=decision.filters,
+        )
+        if not is_valid:
+            logger.warning(f"Invalid analysis plan from LLM: {err_msg}")
+            state._record_event(
+                event_type=HistoryEventType.DIRECTION_CHANGED,
+                title="Analysis Plan Rejected",
+                description=f"Model proposed invalid operation or parameters: {err_msg}",
+            )
+            return None
+
+        return decision
+
+    def execute_analysis(
+        self,
+        state: InvestigationState,
+        decision: AnalysisDecision,
+    ) -> AnalysisResult:
+        """Construct an AnalysisRequest from the decision and execute via AnalyticsExecutor."""
+        obs = state.investigation.observation
+
+        # Select window
+        if decision.comparison_window_needed:
+            win = obs.comparison_window
+            comp_win = obs.baseline_window
+        else:
+            win = obs.comparison_window
+            comp_win = None
+
+        request = AnalysisRequest(
+            operation=decision.operation,
+            window=win,
+            comparison_window=comp_win,
+            params=dict(decision.parameters),
+            dimensions=list(decision.dimensions),
+            filters=dict(decision.filters),
+        )
+
+        self.analyses_executed_count += 1
+        result = self.executor.run(request)
+
+        state._record_event(
+            event_type=HistoryEventType.ANALYSIS_DISPATCHED,
+            title=f"Analysis Executed: {decision.operation}",
+            description=decision.rationale,
+            metadata={
+                "operation": decision.operation,
+                "request_id": result.request_id,
+                "status": result.status.value,
+                "hypothesis_id": decision.hypothesis_id_to_test,
+            },
+        )
+        return result
+
+    def step_interpret_result(
+        self,
+        state: InvestigationState,
+        decision: AnalysisDecision,
+        result: AnalysisResult,
+    ) -> Optional[EvidenceInterpretation]:
+        """Ask the LLM to interpret the actual tool-returned result and update state."""
+        hyp = state.investigation.hypotheses[decision.hypothesis_id_to_test]
+
+        prompt = format_evidence_interpretation_prompt(
+            hypothesis=hyp,
+            decision_rationale=decision.rationale,
+            result=result,
+        )
+
+        try:
+            interp: EvidenceInterpretation = self.llm_client.generate_structured(
+                prompt=prompt,
+                schema=EvidenceInterpretation,
+                system_prompt=SYSTEM_INVESTIGATION_PROMPT,
+            )
+        except Exception as e:
+            logger.error(f"Failed to interpret result: {str(e)}")
+            state._record_event(
+                event_type=HistoryEventType.DIRECTION_CHANGED,
+                title="Result Interpretation Failed",
+                description=f"LLM call failed to parse interpretation: {str(e)}",
+            )
+            return None
+
+        # 1. Record Evidence in state
+        try:
+            inf_type = InferenceType(interp.inference_type)
+        except ValueError:
+            inf_type = InferenceType.OBSERVATIONAL_CORRELATION
+
+        ev = state.record_evidence(
+            finding=interp.finding_summary,
+            source_tables=["orders", "events"],  # Default source references
+            analysis_result=result,
+            population=decision.filters,
+            window=result.metadata.get("window"),
+            inference_type=inf_type,
+        )
+
+        # 2. Link Evidence to Hypothesis
+        try:
+            stance = EvidenceStance(interp.stance)
+        except ValueError:
+            stance = EvidenceStance.INCONCLUSIVE
+
+        state.link_evidence(
+            evidence_id=ev.evidence_id,
+            hypothesis_id=decision.hypothesis_id_to_test,
+            stance=stance,
+            rationale=interp.rationale,
+        )
+
+        # 3. Handle recommended hypothesis status update
+        if interp.recommended_hypothesis_status:
+            rec_status = interp.recommended_hypothesis_status.strip().lower()
+            if rec_status in {"supported", "refuted", "active", "deprioritized"}:
+                new_status = HypothesisStatus(rec_status)
+                reason = interp.status_update_reason or f"Updated based on evidence {ev.evidence_id} ({stance.value})"
+                state.update_hypothesis_status(
+                    hypothesis_id=decision.hypothesis_id_to_test,
+                    new_status=new_status,
+                    reason=reason,
+                    triggered_by_evidence_id=ev.evidence_id,
+                )
+
+        # 4. Handle newly identified unresolved questions
+        for q_text in interp.unresolved_questions:
+            state.add_unresolved_question(
+                question_text=q_text,
+                hypothesis_id=decision.hypothesis_id_to_test,
+                context_or_limitation=f"Identified during analysis {result.operation}",
+            )
+
+        # 5. Check if investigation is complete
+        if interp.is_investigation_complete:
+            if hyp.status == HypothesisStatus.SUPPORTED:
+                # Conclude investigation
+                conf_level = ConfidenceLevel.MEDIUM
+                if interp.confidence_level:
+                    try:
+                        conf_level = ConfidenceLevel(interp.confidence_level.lower())
+                    except ValueError:
+                        pass
+
+                state.conclude(
+                    conclusion_summary=interp.stopping_reason or interp.finding_summary,
+                    supported_hypothesis_id=hyp.hypothesis_id,
+                    confidence_level=conf_level,
+                    confidence_justification=interp.confidence_justification or interp.rationale,
+                    remaining_uncertainties=interp.unresolved_questions,
+                )
+            else:
+                # Stop due to insufficient evidence
+                state.stop_insufficient_evidence(
+                    reason=interp.stopping_reason or "Evidence was insufficient to substantiate hypotheses.",
+                    missing_information_summary="; ".join(interp.unresolved_questions) or "Missing conclusive instrumentation.",
+                    confidence_justification=interp.confidence_justification or "Data gaps prevent distinguishing explanations.",
+                )
+
+        return interp
+
+    # ------------------------------------------------------------------ full investigation loop
+    def run_investigation_loop(self, state: InvestigationState) -> InvestigationState:
+        """Run the complete investigation loop until concluded, stopped, or budget exhausted."""
+        # 1. Formulate hypotheses if none exist
+        if not state.investigation.hypotheses:
+            self.step_formulate_hypotheses(state)
+
+        # 2. Iterate investigation cycles
+        for iteration in range(1, self.max_iterations + 1):
+            if state.investigation.status in (InvestigationStatus.CONCLUDED, InvestigationStatus.STOPPED_INSUFFICIENT_EVIDENCE):
+                break
+
+            if self.analyses_executed_count >= self.max_analyses:
+                state.stop_insufficient_evidence(
+                    reason="Analysis execution budget limit reached.",
+                    missing_information_summary=f"Reached maximum allowed analyses ({self.max_analyses}) before all hypotheses were resolved.",
+                    confidence_justification="Investigation halted by budget constraint.",
+                )
+                break
+
+            # Select analysis
+            decision = self.step_select_analysis(state, iteration)
+            if not decision:
+                state.stop_insufficient_evidence(
+                    reason="No further analytical actions could be selected.",
+                    missing_information_summary="Available tools exhausted without distinguishing competing hypotheses.",
+                    confidence_justification="Cannot proceed without new data sources.",
+                )
+                break
+
+            # Execute analysis
+            result = self.execute_analysis(state, decision)
+
+            # Interpret result
+            interp = self.step_interpret_result(state, decision, result)
+            if interp and interp.is_investigation_complete:
+                break
+
+        # If loop finishes without terminal status, halt with explicit insufficient evidence status
+        if state.investigation.status in (InvestigationStatus.OPEN, InvestigationStatus.IN_PROGRESS):
+            state.stop_insufficient_evidence(
+                reason="Maximum investigation iterations reached without conclusive proof.",
+                missing_information_summary="Cycle limit reached with competing hypotheses still unresolved.",
+                confidence_justification="Investigation reached iteration boundary without conclusive empirical distinction.",
+            )
+
+        return state
