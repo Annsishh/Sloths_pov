@@ -2,10 +2,10 @@
 
 Real evaluation (PAID API calls - you run this yourself):
     set ANTHROPIC_API_KEY=...            (PowerShell: $env:ANTHROPIC_API_KEY="...")
-    python run_eval.py --provider anthropic --model <model-id> --runs 3 --sweep --out eval_results/run1
+    python run_eval.py --provider anthropic --model <model-id> --runs 3 --sweep --out eval_output/run1
 
 Offline harness check (no API, rule-based reference policy; results are NOT a model evaluation):
-    python run_eval.py --provider mock --allow-mock --runs 1 --out eval_results/mock
+    python run_eval.py --provider mock --allow-mock --runs 1 --out eval_output/mock
 
 Preview the number of LLM calls without running anything:
     python run_eval.py --estimate --runs 3 --sweep
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -23,7 +24,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from evaluation.clients import EvalConfigError, resolve_client  # noqa: E402
 from evaluation.metered import PriceTable  # noqa: E402
 from evaluation.mock_policy import make_mock_client  # noqa: E402
-from evaluation.report import write_results  # noqa: E402
+from evaluation.report import save_failed_run, save_run_trace, write_results  # noqa: E402
 from evaluation.runner import DEFAULT_MAX_ANALYSES, estimate_llm_calls, run_scenario_dir  # noqa: E402
 from evaluation.scoring import load_truth, score_run  # noqa: E402
 from evaluation.sweep import run_effect_sweep, sweep_markdown, sweep_svg  # noqa: E402
@@ -41,7 +42,7 @@ def main(argv=None) -> int:
     ap.add_argument("--runs", type=int, default=3, help="runs per scenario")
     ap.add_argument("--scenarios", default="all", help="comma-separated scenario ids, or 'all'")
     ap.add_argument("--data-dir", default=str(ROOT / "data"))
-    ap.add_argument("--out", default=str(ROOT / "eval_results" / "latest"))
+    ap.add_argument("--out", default=None, help="output directory (default: eval_output/<timestamp>)")
     ap.add_argument("--max-analyses", type=int, default=DEFAULT_MAX_ANALYSES)
     ap.add_argument("--sweep", action="store_true", help="also run the product_regression effect-size x noise sweep")
     ap.add_argument("--sweep-runs", type=int, default=3)
@@ -74,14 +75,28 @@ def main(argv=None) -> int:
     def factory():
         return make_mock_client() if is_mock else (inner, None)
 
+    out_dir = Path(args.out) if args.out else ROOT / "eval_output" / datetime.now().strftime("%Y%m%d_%H%M%S")
     records, scores = [], []
     for name in names:
         truth = load_truth(args.data_dir, name)
         for r in range(args.runs):
-            rec = run_scenario_dir(Path(args.data_dir), name, r, factory, provider=args.provider, model=args.model,
-                                   allow_mock=args.allow_mock, price=price, max_analyses=args.max_analyses)
-            sc = score_run(rec, truth)
-            records.append(rec); scores.append(sc)
+            try:
+                rec = run_scenario_dir(Path(args.data_dir), name, r, factory, provider=args.provider, model=args.model,
+                                       allow_mock=args.allow_mock, price=price, max_analyses=args.max_analyses)
+            except Exception as e:      # a crashed run is recorded, never lost, and does not stop the evaluation
+                save_failed_run(out_dir, name, r, args.provider, args.model, f"{type(e).__name__}: {e}")
+                print(f"[{name} #{r}] CRASHED before a trace existed: {e}", file=sys.stderr)
+                continue
+            try:
+                sc = score_run(rec, truth)
+            except Exception as e:
+                sc = None
+                print(f"[{name} #{r}] scoring failed: {e}", file=sys.stderr)
+            save_run_trace(out_dir, rec, sc, rec.error)      # saved immediately, whatever the outcome
+            records.append(rec)
+            if sc is None:
+                continue
+            scores.append(sc)
             print(f"[{name} #{r}] outcome={sc['outcome']} supported={sc['supported']} correct={sc['run_correct']} calls={sc['llm_calls']}")
 
     sweep = sweep_md = sweep_chart = None
@@ -90,7 +105,7 @@ def main(argv=None) -> int:
                                  model=args.model, allow_mock=args.allow_mock, price=price, max_analyses=args.max_analyses)
         sweep_md, sweep_chart = sweep_markdown(sweep, is_mock), sweep_svg(sweep)
     cfg = {"provider": args.provider, "model": args.model, "runs": args.runs, "scenarios": names, "max_analyses": args.max_analyses}
-    paths = write_results(Path(args.out), cfg, records, scores, sweep, sweep_md, sweep_chart, args.save_prompts)
+    paths = write_results(out_dir, cfg, records, scores, sweep, sweep_md, sweep_chart, args.save_prompts)
     print("Wrote:", ", ".join(str(p) for p in paths.values()))
     return 0
 

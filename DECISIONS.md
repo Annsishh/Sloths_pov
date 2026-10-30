@@ -148,3 +148,15 @@ Autonomous-run decision log. Format: phase · question · options · choice · w
 7. `tests/test_source_isolation.py`: `capability_catalogue.py` and `sql_sandbox.py` join the guard-file allowlist (they must name
    "ground_truth" to block it; the test still forbids them from reading files).
 8. Test speed: the infinite-recursion timeout test monkeypatches the hard cap to 1 s (the real cap, 10 s, is asserted separately).
+
+## Phase 6
+
+1. **Backend interface wraps the pandas loader.** `analytics.backend.DataBackend` (abstract: `load`, `available_tables`; defaults for
+   `load_all`, `row_count`, `time_coverage`, `clear_cache`). `DataLoader` is the default implementation; the executor depends only on
+   the interface. No SQLite or warehouse backend was built (SQLite remains only inside the `custom_query` sandbox).
+2. **Mapping is JSON, not YAML** (no new dependency). Sections: tables, columns, event_names, values. `MappedBackend` applies it at
+   load time so the catalogue, tools and prompts keep one internal vocabulary; tables missing from the raw source are unavailable and
+   testability shrinks accordingly. `[REVIEW]` mapping handles renames and value/event translation only, not derived columns
+   or unit conversions.
+3. **Trace** is built from the investigation's own append-only history (so it can be regenerated from a saved state). Analysis events
+   now record parameters, dimensions, filters and windows. `[REVIEW]` `run_eval.py` does not yet save traces automatically.

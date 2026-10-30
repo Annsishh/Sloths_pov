@@ -1,0 +1,26 @@
+{
+  "comment": "Example: a company whose warehouse uses different names. Internal names on the left, external on the right.",
+  "tables": {
+    "users": "dim_customers",
+    "events": "raw_web_events",
+    "orders": "fct_payments",
+    "releases": "deploy_log",
+    "user_feedback": "csat_responses"
+  },
+  "columns": {
+    "users": {"user_id": "customer_id", "signup_timestamp": "created_at", "acquisition_channel": "utm_channel",
+              "country": "country", "device_type": "device", "browser": "browser", "plan_tier": "plan"},
+    "events": {"event_id": "id", "user_id": "customer_id", "session_id": "visit_id", "timestamp": "event_ts",
+               "event_name": "name", "page": "page", "device_type": "device", "browser": "browser", "app_version": "build"},
+    "orders": {"order_id": "payment_id", "user_id": "customer_id", "timestamp": "attempted_at", "amount": "amount_usd",
+               "currency": "currency", "status": "outcome", "failure_reason": "decline_code"}
+  },
+  "event_names": {
+    "order_completed": "purchase_success",
+    "checkout_started": "begin_checkout",
+    "checkout_failed": "purchase_error"
+  },
+  "values": {
+    "orders": {"status": {"completed": "SUCCESS", "failed": "DECLINED"}}
+  }
+}

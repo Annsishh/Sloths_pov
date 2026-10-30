@@ -354,3 +354,38 @@ def test_markdown_for_real_runs_has_no_mock_banner():
     from evaluation.report import build_summary
     md = summary_markdown(build_summary({"provider": "anthropic", "model": "m", "runs": 1}, scores))
     assert "MOCK" not in md and "anthropic" in md
+
+
+@needs_data
+@pytest.mark.parametrize("scenario", ["tracking_failure", "pricing_change"])        # a concluded run and an INSUFFICIENT_EVIDENCE run
+def test_cli_saves_a_trace_per_run_that_matches_the_scored_conclusion(tmp_path, no_keys, scenario):
+    out = tmp_path / "o"
+    assert run_eval.main(["--provider", "mock", "--allow-mock", "--runs", "2", "--scenarios", scenario, "--out", str(out)]) == 0
+    score_rows = {(s["scenario"], s["run"]): s for s in json.loads((out / "results.json").read_text(encoding="utf-8"))["scores"]}
+    for n in (0, 1):
+        j, m = out / scenario / f"run_{n}.json", out / scenario / f"run_{n}.md"
+        assert j.exists() and m.exists()
+        meta = json.loads(j.read_text(encoding="utf-8"))
+        assert (meta["scenario"], meta["run"], meta["provider"], meta["is_mock"]) == (scenario, n, "mock", True) and "model" in meta
+        trace, sc = meta["trace"], score_rows[(scenario, n)]
+        assert trace["conclusion"]["outcome"] == sc["outcome"] == meta["score"]["outcome"]
+        assert [c["category"] for c in trace["conclusion"]["supported_causes"]] == sc["supported"]
+        assert "## Conclusion" in m.read_text(encoding="utf-8")
+
+
+def test_trace_is_saved_even_when_the_run_errors_or_never_got_started(tmp_path):
+    from evaluation.report import save_failed_run, save_run_trace
+    from evaluation.runner import run_investigation
+
+    failing = lambda: (MockLLMClient(simulate_error="model exploded"), None)
+    alert = {"metric": "order_success_rate", "baseline_window": ["2026-09-01", "2026-09-11"], "comparison_window": ["2026-09-11", "2026-09-15"]}
+    rec = run_investigation(_tiny(), alert, failing, scenario="x", run=3, provider="mock", allow_mock=True)
+    assert rec.error
+    meta = json.loads(save_run_trace(tmp_path, rec, None, rec.error)["json"].read_text(encoding="utf-8"))
+    assert meta["error"] and meta["run"] == 3 and meta["trace"]["status"] == "stopped_insufficient_evidence"
+    rec.state = {"broken": True}                      # state that cannot become a trace still leaves a file with the reason
+    meta2 = json.loads(save_run_trace(tmp_path, rec, None, "boom")["json"].read_text(encoding="utf-8"))
+    assert meta2["trace"] is None and meta2["trace_error"] and meta2["error"] == "boom"
+    p = save_failed_run(tmp_path, "y", 0, "anthropic", "m1", "KeyError: x")      # crash before any state existed
+    d = json.loads(p.read_text(encoding="utf-8"))
+    assert (d["scenario"], d["run"], d["provider"], d["model"], d["error"]) == ("y", 0, "anthropic", "m1", "KeyError: x")

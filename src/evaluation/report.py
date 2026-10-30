@@ -72,3 +72,40 @@ def write_results(out_dir: Path, config: Dict[str, Any], records: List[Any], sco
         if sweep_svg:
             (out_dir / "sweep.svg").write_text(sweep_svg, encoding="utf-8"); paths["sweep_svg"] = out_dir / "sweep.svg"
     return paths
+
+
+def save_run_trace(out_dir: Path, record: Any, score: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> Dict[str, Path]:
+    """Write <out_dir>/<scenario>/run_<n>.json and .md: the Phase 6 trace plus scenario/run/provider/model, score and error.
+
+    Never depends on the run succeeding: if the trace cannot be built the files still record why."""
+    from investigation.state import InvestigationState
+    from investigation.trace import build_trace, trace_markdown
+
+    d = Path(out_dir) / record.scenario
+    d.mkdir(parents=True, exist_ok=True)
+    stem = f"run_{record.run}"
+    meta = {"scenario": record.scenario, "run": record.run, "provider": record.provider, "model": record.model,
+            "is_mock": record.is_mock, "error": error or record.error, "score": score, "trace": None, "trace_error": None}
+    md = f"# {record.scenario} / run {record.run} ({record.provider}/{record.model})\n\n"
+    if meta["error"]:
+        md += f"**Error:** {meta['error']}\n\n"
+    try:
+        state = InvestigationState.from_dict(record.state)
+        meta["trace"] = build_trace(state)
+        md += trace_markdown(state)
+    except Exception as e:
+        meta["trace_error"] = f"{type(e).__name__}: {e}"
+        md += f"_Trace could not be built: {meta['trace_error']}_\n"
+    (d / f"{stem}.json").write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
+    (d / f"{stem}.md").write_text(md, encoding="utf-8")
+    return {"json": d / f"{stem}.json", "markdown": d / f"{stem}.md"}
+
+
+def save_failed_run(out_dir: Path, scenario: str, run: int, provider: str, model: Optional[str], error: str) -> Path:
+    """A run that crashed before any state existed still leaves a file naming scenario, run, provider, model and error."""
+    d = Path(out_dir) / scenario
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"run_{run}.json"
+    p.write_text(json.dumps({"scenario": scenario, "run": run, "provider": provider, "model": model, "error": error,
+                             "score": None, "trace": None}, indent=2), encoding="utf-8")
+    return p

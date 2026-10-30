@@ -273,6 +273,11 @@ class InvestigationController:
             description=decision.rationale,
             metadata={
                 "operation": decision.operation,
+                "parameters": dict(decision.parameters),
+                "dimensions": list(decision.dimensions),
+                "filters": dict(decision.filters),
+                "window": str(win),
+                "comparison_window": str(comp_win) if comp_win else None,
                 "request_id": result.request_id,
                 "status": result.status.value,
                 "hypothesis_id": decision.hypothesis_id_to_test,

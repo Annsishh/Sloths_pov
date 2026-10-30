@@ -24,7 +24,8 @@ from analytics.seasonality import seasonal_baseline
 from analytics.data_quality import duplicate_event_check, event_volume_check, tracking_gap_check
 from analytics.feedback_analysis import analyze_errors, analyze_feedback
 from analytics.funnel import compare_funnel, compute_funnel
-from analytics.loader import DataCatalogue, DataLoader
+from analytics.backend import DataBackend
+from analytics.loader import DataCatalogue
 from analytics.metrics import compute_metric
 from analytics.models import AnalysisRequest, AnalysisResult, AnalysisStatus
 from analytics.release_analysis import exposure_effect, release_did, release_impact, sample_ratio_check
@@ -38,7 +39,7 @@ from analytics.time_series import compare_periods, compute_time_series
 class AnalyticsExecutor:
     """Executes analytical operations against investigator data."""
 
-    def __init__(self, loader: DataLoader) -> None:
+    def __init__(self, loader: DataBackend) -> None:
         self.loader = loader
         self.catalogue = DataCatalogue(loader)
         self._custom_handlers: Dict[str, Callable[[AnalysisRequest], AnalysisResult]] = {}

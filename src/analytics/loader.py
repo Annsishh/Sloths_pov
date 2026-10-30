@@ -21,11 +21,9 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from analytics.backend import DERIVED_SESSIONS, DataBackend, derive_sessions
 from analytics.path_guard import ForbiddenDataPathError, assert_investigator_path
 
-
-# Derived (not on disk) table: one row per session, built from events.
-DERIVED_SESSIONS = "sessions"
 
 # ---------------------------------------------------------------------------
 # Table metadata
@@ -212,7 +210,7 @@ CATALOGUE: Dict[str, TableInfo] = {
 # DataLoader
 # ---------------------------------------------------------------------------
 
-class DataLoader:
+class DataLoader(DataBackend):
     """Loads investigator-accessible CSV tables with consistent datetime parsing.
 
     Parameters
@@ -294,19 +292,7 @@ class DataLoader:
         return df
 
     def _derive_sessions(self) -> pd.DataFrame:
-        """One row per session built from events: first-event time, user/device/browser/version, and whether the
-        session contained a checkout start / a tracked order_completed. Lets rate tools use sessions as the unit
-        (conversion = converted sessions / sessions), which matches 'orders per 100 sessions' alerts."""
-        ev = self.load("events")
-        cols = ["session_id", "user_id", "timestamp", "device_type", "browser", "app_version", "checkout_started", "converted"]
-        if ev.empty:
-            return pd.DataFrame({c: pd.Series(dtype="object") for c in cols})
-        g = ev.sort_values("timestamp").groupby("session_id", sort=False)
-        sess = g.agg(user_id=("user_id", "first"), timestamp=("timestamp", "first"), device_type=("device_type", "first"),
-                     browser=("browser", "first"), app_version=("app_version", "first")).reset_index()
-        flags = ev.assign(cs=ev["event_name"] == "checkout_started", cv=ev["event_name"] == "order_completed") \
-                  .groupby("session_id").agg(checkout_started=("cs", "any"), converted=("cv", "any")).reset_index()
-        return sess.merge(flags, on="session_id")[cols]
+        return derive_sessions(self.load("events"))
 
     def load_all(self) -> Dict[str, pd.DataFrame]:
         """Load and return all available tables as a dict."""
