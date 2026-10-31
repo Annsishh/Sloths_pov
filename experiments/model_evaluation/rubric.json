@@ -1,0 +1,23 @@
+{
+  "_note": "EVALUATOR-ONLY. Heuristic rubric (author judgement, not derived from ground truth): operations a sensible investigator would use per scenario. 'core' is a list of any-of groups; each group should be covered by at least one executed operation.",
+  "product_regression": {
+    "relevant": ["release_impact", "release_did", "error_analysis", "segment_comparison", "period_comparison", "funnel_comparison", "time_series", "change_point", "statistical_test", "metric_aggregate", "ratio_metric_comparison", "segment"],
+    "core": [["release_impact", "release_did"], ["error_analysis", "segment_comparison"]]
+  },
+  "acquisition_shift": {
+    "relevant": ["mix_shift_decomposition", "segment_comparison", "segment", "period_comparison", "ratio_metric_comparison", "time_series", "statistical_test", "metric_aggregate", "funnel_comparison"],
+    "core": [["mix_shift_decomposition"], ["segment_comparison", "segment"]]
+  },
+  "tracking_failure": {
+    "relevant": ["tracking_gap_check", "event_volume_check", "duplicate_event_check", "period_comparison", "time_series", "spike_check", "segment_comparison", "metric_aggregate", "change_point"],
+    "core": [["tracking_gap_check"], ["event_volume_check", "duplicate_event_check"]]
+  },
+  "competing_hypotheses": {
+    "relevant": ["tracking_gap_check", "release_impact", "release_did", "error_analysis", "event_volume_check", "funnel_comparison", "period_comparison", "time_series", "segment_comparison", "segment", "metric_aggregate", "duplicate_event_check"],
+    "core": [["tracking_gap_check"], ["release_impact", "release_did", "error_analysis"]]
+  },
+  "insufficient_evidence": {
+    "relevant": ["period_comparison", "segment_comparison", "segment", "time_series", "mix_shift_decomposition", "ratio_metric_comparison", "funnel_comparison", "sample_ratio_check", "change_point", "metric_aggregate", "statistical_test", "event_volume_check", "tracking_gap_check", "release_impact", "release_did"],
+    "core": [["mix_shift_decomposition", "segment_comparison", "segment"], ["release_impact", "release_did", "tracking_gap_check"]]
+  }
+}

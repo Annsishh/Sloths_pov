@@ -1,0 +1,92 @@
+{
+  "model_id": "mock_faulty",
+  "provider": "mock-faulty",
+  "model": "always-malformed-json",
+  "scenario": "competing_hypotheses",
+  "run": 0,
+  "error": "JSONDecodeError: Simulated malformed JSON: line 1 column 1 (char 0)",
+  "api_errors": 0,
+  "schema_errors": 1,
+  "model_outputs": {
+    "proposed_hypotheses": [],
+    "requested_analyses": [],
+    "evidence_requests": [],
+    "stated_confidences": []
+  },
+  "investigation": {
+    "hypotheses": {},
+    "analyses_executed": [],
+    "conclusion": {
+      "outcome": "insufficient_evidence",
+      "total_observed_change": -3.204236,
+      "supported_causes": [],
+      "explained_change": 0,
+      "unexplained_change": -3.204236,
+      "unexplained_share": 1.0,
+      "ruled_out": [],
+      "untestable": [],
+      "inconclusive_hypothesis_ids": [],
+      "data_requests": [
+        "No specific missing dataset was identified from the hypothesis set (The investigation could not complete.); ask domain owners which additional logs could distinguish the remaining hypotheses."
+      ],
+      "warnings": [],
+      "tests_in_family": 0,
+      "fdr_alpha": 0.05,
+      "statements": []
+    }
+  },
+  "llm_usage": {
+    "calls": 1,
+    "errors": 1,
+    "latency_sec": 0.0001,
+    "input_tokens": 805,
+    "output_tokens": 0,
+    "tokens_estimated": true,
+    "cost_usd": null,
+    "is_mock": false
+  },
+  "calls": [
+    {
+      "seq": 0,
+      "schema": "HypothesesGenerationOutput",
+      "raw_response": null,
+      "usage": {},
+      "valid": false,
+      "error": "JSONDecodeError: Simulated malformed JSON: line 1 column 1 (char 0)",
+      "error_kind": "schema",
+      "latency_sec": 0.0
+    }
+  ],
+  "evaluation": {
+    "model_id": "mock_faulty",
+    "scenario": "competing_hypotheses",
+    "run": 0,
+    "is_mock": true,
+    "completed": true,
+    "run_error": "JSONDecodeError: Simulated malformed JSON: line 1 column 1 (char 0)",
+    "api_errors": 0,
+    "schema_errors": 1,
+    "n_calls": 1,
+    "calls_per_valid": null,
+    "hypothesis_quality": 0.0,
+    "evidence_relevance": 0.0,
+    "analysis_selection": 0.0,
+    "contradiction_handling": null,
+    "uncertainty_calibration": null,
+    "conclusion_quality": 0.25,
+    "schema_compliance": 0.0,
+    "correct": false,
+    "outcome": "insufficient_evidence",
+    "supported": [],
+    "expected_primary": "code_regression",
+    "integrity_errors": 0,
+    "guardrail_blocks": 0,
+    "n_analyses": 0,
+    "tokens_in": 805,
+    "tokens_out": 0,
+    "tokens_estimated": true,
+    "cost_usd": null,
+    "latency_sec": 0.0001,
+    "wall_sec": 0.2769
+  }
+}

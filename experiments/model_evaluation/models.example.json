@@ -1,0 +1,10 @@
+{
+  "_note": "Copy and edit. 'model' must be a real model id for that provider (SET_MODEL_ID is refused). Keys come from the env var named in api_key_env, never from this file. Prices (USD per million tokens) are optional; without them cost is reported as null.",
+  "runs": 1,
+  "max_analyses": 10,
+  "models": [
+    {"id": "openai", "provider": "openai", "model": "SET_MODEL_ID", "api_key_env": "OPENAI_API_KEY", "temperature": 0.2, "price_in_per_mtok": null, "price_out_per_mtok": null},
+    {"id": "anthropic", "provider": "anthropic", "model": "claude-sonnet-5-5", "api_key_env": "ANTHROPIC_API_KEY", "temperature": 0.2, "price_in_per_mtok": null, "price_out_per_mtok": null},
+    {"id": "gemini", "provider": "gemini", "model": "SET_MODEL_ID", "api_key_env": "GEMINI_API_KEY", "temperature": 0.2, "price_in_per_mtok": null, "price_out_per_mtok": null}
+  ]
+}

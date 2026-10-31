@@ -1,0 +1,10 @@
+{
+  "_note": "Model-facing manifest: maps each benchmark slot to an EXISTING generated scenario under data/. Only data/<scenario>/investigator_data and alert.json are ever shown to a model. Ground truth is read only by evaluator.py.",
+  "scenarios": [
+    {"id": "product_regression", "slot": "Product regression", "data_scenario": "product_regression"},
+    {"id": "acquisition_shift", "slot": "Acquisition shift", "data_scenario": "acquisition_shift"},
+    {"id": "tracking_failure", "slot": "Tracking failure", "data_scenario": "tracking_failure"},
+    {"id": "competing_hypotheses", "slot": "Competing hypotheses", "data_scenario": "overlapping_causes"},
+    {"id": "insufficient_evidence", "slot": "Insufficient evidence", "data_scenario": "pricing_change"}
+  ]
+}

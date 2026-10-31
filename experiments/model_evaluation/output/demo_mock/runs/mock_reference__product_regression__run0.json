@@ -1,0 +1,722 @@
+{
+  "model_id": "mock_reference",
+  "provider": "mock",
+  "model": "reference-policy",
+  "scenario": "product_regression",
+  "run": 0,
+  "error": null,
+  "api_errors": 0,
+  "schema_errors": 0,
+  "model_outputs": {
+    "proposed_hypotheses": [
+      {
+        "title": "Telemetry tracking loss",
+        "category": "tracking_loss"
+      },
+      {
+        "title": "Code regression in a release",
+        "category": "code_regression"
+      },
+      {
+        "title": "Traffic mix shift",
+        "category": "traffic_mix_shift"
+      },
+      {
+        "title": "Third-party outage",
+        "category": "third_party_outage"
+      },
+      {
+        "title": "Seasonality or calendar effect",
+        "category": "seasonality_or_calendar"
+      },
+      {
+        "title": "Natural variation",
+        "category": "natural_variation"
+      },
+      {
+        "title": "Pricing or policy change",
+        "category": "pricing_or_policy_change"
+      },
+      {
+        "title": "Gradual cohort decay",
+        "category": "gradual_or_cohort_effect"
+      }
+    ],
+    "requested_analyses": [
+      {
+        "operation": "tracking_gap_check",
+        "hypothesis": "hyp_1",
+        "dimensions": [
+          "browser"
+        ],
+        "rationale": "Test the tracking_loss hypothesis with tracking_gap_check."
+      },
+      {
+        "operation": "release_did",
+        "hypothesis": "hyp_2",
+        "dimensions": [],
+        "rationale": "Test the code_regression hypothesis with release_did."
+      },
+      {
+        "operation": "mix_shift_decomposition",
+        "hypothesis": "hyp_3",
+        "dimensions": [
+          "acquisition_channel"
+        ],
+        "rationale": "Test the traffic_mix_shift hypothesis with mix_shift_decomposition."
+      },
+      {
+        "operation": "error_analysis",
+        "hypothesis": "hyp_4",
+        "dimensions": [
+          "failure_reason"
+        ],
+        "rationale": "Test the third_party_outage hypothesis with error_analysis."
+      },
+      {
+        "operation": "seasonal_baseline",
+        "hypothesis": "hyp_5",
+        "dimensions": [],
+        "rationale": "Test the seasonality_or_calendar hypothesis with seasonal_baseline."
+      },
+      {
+        "operation": "change_point",
+        "hypothesis": "hyp_6",
+        "dimensions": [],
+        "rationale": "Test the natural_variation hypothesis with change_point."
+      },
+      {
+        "operation": "retention_comparison",
+        "hypothesis": "hyp_8",
+        "dimensions": [],
+        "rationale": "Test the gradual_or_cohort_effect hypothesis with retention_comparison."
+      },
+      {
+        "operation": "error_analysis",
+        "hypothesis": "hyp_2",
+        "dimensions": [
+          "failure_reason"
+        ],
+        "rationale": "Test the code_regression hypothesis with error_analysis."
+      },
+      {
+        "operation": "spike_check",
+        "hypothesis": "hyp_4",
+        "dimensions": [],
+        "rationale": "Test the third_party_outage hypothesis with spike_check."
+      },
+      {
+        "operation": "change_point",
+        "hypothesis": "hyp_8",
+        "dimensions": [],
+        "rationale": "Test the gradual_or_cohort_effect hypothesis with change_point."
+      }
+    ],
+    "evidence_requests": [],
+    "stated_confidences": []
+  },
+  "investigation": {
+    "hypotheses": {
+      "hyp_1": {
+        "hypothesis_id": "hyp_1",
+        "title": "Telemetry tracking loss",
+        "explanation": "Client-side event tracking dropped events so reported metrics fell.",
+        "category": "tracking_loss",
+        "status": "refuted",
+        "supporting_evidence_ids": [],
+        "contradicting_evidence_ids": [
+          "ev_1_b66b"
+        ],
+        "history": [
+          {
+            "transition_id": "trans_fd785096",
+            "previous_status": "proposed",
+            "new_status": "refuted",
+            "reason": "tracking_gap_check result contradicts the hypothesis (capture rates are consistent across segments (min p=1))",
+            "triggered_by_evidence_id": "ev_1_b66b",
+            "timestamp": "2026-10-31T07:28:41.240462+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606090+00:00",
+        "updated_at": "2026-10-31T07:28:41.240462+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_2": {
+        "hypothesis_id": "hyp_2",
+        "title": "Code regression in a release",
+        "explanation": "A recent release introduced a bug that broke part of checkout.",
+        "category": "code_regression",
+        "status": "supported",
+        "supporting_evidence_ids": [
+          "ev_2_d8fd",
+          "ev_8_71b0"
+        ],
+        "contradicting_evidence_ids": [],
+        "history": [
+          {
+            "transition_id": "trans_1ecdc30e",
+            "previous_status": "proposed",
+            "new_status": "active",
+            "reason": "Under active analysis; evidence ev_2_d8fd recorded (supports).",
+            "triggered_by_evidence_id": "ev_2_d8fd",
+            "timestamp": "2026-10-31T07:28:41.315439+00:00"
+          },
+          {
+            "transition_id": "trans_8c31ba20",
+            "previous_status": "active",
+            "new_status": "supported",
+            "reason": "error_analysis result supports the hypothesis (failed orders concentrate on one device segment) [rule: 2+ supporting items from 2+ analyses, significant after correction]",
+            "triggered_by_evidence_id": "ev_8_71b0",
+            "timestamp": "2026-10-31T07:28:43.707053+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606165+00:00",
+        "updated_at": "2026-10-31T07:28:43.707053+00:00",
+        "support_snapshot": {
+          "ev_2_d8fd": 0.000248
+        }
+      },
+      "hyp_3": {
+        "hypothesis_id": "hyp_3",
+        "title": "Traffic mix shift",
+        "explanation": "The mix of arriving users shifted toward lower-converting segments.",
+        "category": "traffic_mix_shift",
+        "status": "refuted",
+        "supporting_evidence_ids": [],
+        "contradicting_evidence_ids": [
+          "ev_3_0d57"
+        ],
+        "history": [
+          {
+            "transition_id": "trans_d2d804a2",
+            "previous_status": "proposed",
+            "new_status": "refuted",
+            "reason": "mix_shift_decomposition result contradicts the hypothesis (mix effect -0.000143 explains little of -0.0295)",
+            "triggered_by_evidence_id": "ev_3_0d57",
+            "timestamp": "2026-10-31T07:28:41.547900+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606204+00:00",
+        "updated_at": "2026-10-31T07:28:41.547900+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_4": {
+        "hypothesis_id": "hyp_4",
+        "title": "Third-party outage",
+        "explanation": "An external payment dependency failed for a short period.",
+        "category": "third_party_outage",
+        "status": "refuted",
+        "supporting_evidence_ids": [
+          "ev_4_3ef6"
+        ],
+        "contradicting_evidence_ids": [
+          "ev_9_faca"
+        ],
+        "history": [
+          {
+            "transition_id": "trans_adaff44e",
+            "previous_status": "proposed",
+            "new_status": "active",
+            "reason": "Under active analysis; evidence ev_4_3ef6 recorded (supports).",
+            "triggered_by_evidence_id": "ev_4_3ef6",
+            "timestamp": "2026-10-31T07:28:41.572618+00:00"
+          },
+          {
+            "transition_id": "trans_92469491",
+            "previous_status": "active",
+            "new_status": "refuted",
+            "reason": "spike_check result contradicts the hypothesis (no single abnormal day (0 day(s) with raw p<0.001))",
+            "triggered_by_evidence_id": "ev_9_faca",
+            "timestamp": "2026-10-31T07:28:43.807023+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606233+00:00",
+        "updated_at": "2026-10-31T07:28:43.807023+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_5": {
+        "hypothesis_id": "hyp_5",
+        "title": "Seasonality or calendar effect",
+        "explanation": "The comparison window covers weekends or holidays that are normally quieter.",
+        "category": "seasonality_or_calendar",
+        "status": "refuted",
+        "supporting_evidence_ids": [],
+        "contradicting_evidence_ids": [
+          "ev_5_cab1"
+        ],
+        "history": [
+          {
+            "transition_id": "trans_27b65ef2",
+            "previous_status": "proposed",
+            "new_status": "refuted",
+            "reason": "seasonal_baseline result contradicts the hypothesis (deviation from same-weekday baseline remains (p=2.55e-08) or no weekday pattern (p=0.431))",
+            "triggered_by_evidence_id": "ev_5_cab1",
+            "timestamp": "2026-10-31T07:28:41.642787+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606257+00:00",
+        "updated_at": "2026-10-31T07:28:41.642787+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_6": {
+        "hypothesis_id": "hyp_6",
+        "title": "Natural variation",
+        "explanation": "The change is within normal day-to-day variation of the metric.",
+        "category": "natural_variation",
+        "status": "refuted",
+        "supporting_evidence_ids": [],
+        "contradicting_evidence_ids": [
+          "ev_6_6107"
+        ],
+        "history": [
+          {
+            "transition_id": "trans_d49c51ea",
+            "previous_status": "proposed",
+            "new_status": "refuted",
+            "reason": "change_point result contradicts the hypothesis (a change point exists (p=0.002))",
+            "triggered_by_evidence_id": "ev_6_6107",
+            "timestamp": "2026-10-31T07:28:43.037107+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606281+00:00",
+        "updated_at": "2026-10-31T07:28:43.037107+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_7": {
+        "hypothesis_id": "hyp_7",
+        "title": "Pricing or policy change",
+        "explanation": "A price or policy change reduced conversion.",
+        "category": "pricing_or_policy_change",
+        "status": "proposed",
+        "supporting_evidence_ids": [],
+        "contradicting_evidence_ids": [],
+        "history": [],
+        "created_at": "2026-10-31T07:28:40.606304+00:00",
+        "updated_at": "2026-10-31T07:28:40.606304+00:00",
+        "support_snapshot": {}
+      },
+      "hyp_8": {
+        "hypothesis_id": "hyp_8",
+        "title": "Gradual cohort decay",
+        "explanation": "Retention is eroding gradually across cohorts.",
+        "category": "gradual_or_cohort_effect",
+        "status": "supported",
+        "supporting_evidence_ids": [
+          "ev_7_9586",
+          "ev_10_7b61"
+        ],
+        "contradicting_evidence_ids": [],
+        "history": [
+          {
+            "transition_id": "trans_d44351ac",
+            "previous_status": "proposed",
+            "new_status": "active",
+            "reason": "Under active analysis; evidence ev_7_9586 recorded (supports).",
+            "triggered_by_evidence_id": "ev_7_9586",
+            "timestamp": "2026-10-31T07:28:43.676602+00:00"
+          },
+          {
+            "transition_id": "trans_0f4e6844",
+            "previous_status": "active",
+            "new_status": "supported",
+            "reason": "change_point result supports the hypothesis (gradual decline, no single step) [rule: 2+ supporting items from 2+ analyses, significant after correction]",
+            "triggered_by_evidence_id": "ev_10_7b61",
+            "timestamp": "2026-10-31T07:28:45.083050+00:00"
+          }
+        ],
+        "created_at": "2026-10-31T07:28:40.606328+00:00",
+        "updated_at": "2026-10-31T07:28:45.083050+00:00",
+        "support_snapshot": {
+          "ev_7_9586": 0.000868,
+          "ev_10_7b61": 0.014
+        }
+      }
+    },
+    "analyses_executed": [
+      "tracking_gap_check",
+      "release_did",
+      "mix_shift_decomposition",
+      "error_analysis",
+      "seasonal_baseline",
+      "change_point",
+      "retention_comparison",
+      "error_analysis",
+      "spike_check",
+      "change_point"
+    ],
+    "conclusion": {
+      "outcome": "insufficient_evidence",
+      "total_observed_change": -0.208159,
+      "supported_causes": [
+        {
+          "hypothesis_id": "hyp_2",
+          "category": "code_regression",
+          "estimated_change": -0.43973063973063964,
+          "share": 2.1124747896110168,
+          "basis_evidence_ids": [
+            "ev_2_d8fd"
+          ],
+          "note": "single tool estimate",
+          "attribution": "consistent_with",
+          "method": "difference_in_differences:exposed_share_weighted",
+          "se": 0.1092796072632027,
+          "ci_lower": null,
+          "ci_upper": null,
+          "window": {
+            "start": "2026-09-15T10:00:00+00:00",
+            "end": "2026-09-22T10:00:00+00:00"
+          },
+          "statement": "The evidence is consistent with Code regression in a release (code_regression); the available tools cannot confirm the underlying cause, accounting for about 211% of the observed change (estimate -0.4397 +/- 0.109 SE, method difference_in_differences:exposed_share_weighted)."
+        },
+        {
+          "hypothesis_id": "hyp_8",
+          "category": "gradual_or_cohort_effect",
+          "estimated_change": null,
+          "share": null,
+          "basis_evidence_ids": [
+            "ev_7_9586",
+            "ev_10_7b61"
+          ],
+          "note": "no quantified effect estimate available",
+          "attribution": "consistent_with",
+          "method": "",
+          "se": null,
+          "ci_lower": null,
+          "ci_upper": null,
+          "window": null,
+          "statement": "The evidence is consistent with Gradual cohort decay (gradual_or_cohort_effect); the available tools cannot confirm the underlying cause; its contribution to the observed change could not be quantified."
+        }
+      ],
+      "explained_change": -0.43973063973063964,
+      "unexplained_change": 0.23157163973063963,
+      "unexplained_share": -1.1124747896110168,
+      "ruled_out": [
+        {
+          "hypothesis_id": "hyp_1",
+          "title": "Telemetry tracking loss",
+          "category": "tracking_loss",
+          "reason": "tracking_gap_check result contradicts the hypothesis (capture rates are consistent across segments (min p=1))",
+          "evidence_ids": [
+            "ev_1_b66b"
+          ]
+        },
+        {
+          "hypothesis_id": "hyp_3",
+          "title": "Traffic mix shift",
+          "category": "traffic_mix_shift",
+          "reason": "mix_shift_decomposition result contradicts the hypothesis (mix effect -0.000143 explains little of -0.0295)",
+          "evidence_ids": [
+            "ev_3_0d57"
+          ]
+        },
+        {
+          "hypothesis_id": "hyp_4",
+          "title": "Third-party outage",
+          "category": "third_party_outage",
+          "reason": "spike_check result contradicts the hypothesis (no single abnormal day (0 day(s) with raw p<0.001))",
+          "evidence_ids": [
+            "ev_9_faca"
+          ]
+        },
+        {
+          "hypothesis_id": "hyp_5",
+          "title": "Seasonality or calendar effect",
+          "category": "seasonality_or_calendar",
+          "reason": "seasonal_baseline result contradicts the hypothesis (deviation from same-weekday baseline remains (p=2.55e-08) or no weekday pattern (p=0.431))",
+          "evidence_ids": [
+            "ev_5_cab1"
+          ]
+        },
+        {
+          "hypothesis_id": "hyp_6",
+          "title": "Natural variation",
+          "category": "natural_variation",
+          "reason": "change_point result contradicts the hypothesis (a change point exists (p=0.002))",
+          "evidence_ids": [
+            "ev_6_6107"
+          ]
+        }
+      ],
+      "untestable": [
+        {
+          "hypothesis_id": "hyp_7",
+          "title": "Pricing or policy change",
+          "category": "pricing_or_policy_change",
+          "reason": "no available analysis provides: pricing_change_log",
+          "data_request": "pricing and policy change log for 2026-09-15..2026-09-30 (comparison window) and 2026-09-01..2026-09-14 (baseline window)"
+        }
+      ],
+      "inconclusive_hypothesis_ids": [],
+      "data_requests": [
+        "pricing and policy change log for 2026-09-15..2026-09-30 (comparison window) and 2026-09-01..2026-09-14 (baseline window)"
+      ],
+      "warnings": [
+        "Supported cause(s) ['hyp_8'] have no quantified effect; the unexplained remainder may include their contribution.",
+        "Attributed changes (-0.4397) exceed the observed change (-0.2082); estimates overlap or are overstated."
+      ],
+      "tests_in_family": 42,
+      "fdr_alpha": 0.05,
+      "statements": [
+        "The evidence is consistent with Code regression in a release (code_regression); the available tools cannot confirm the underlying cause, accounting for about 211% of the observed change (estimate -0.4397 +/- 0.109 SE, method difference_in_differences:exposed_share_weighted).",
+        "The evidence is consistent with Gradual cohort decay (gradual_or_cohort_effect); the available tools cannot confirm the underlying cause; its contribution to the observed change could not be quantified."
+      ]
+    }
+  },
+  "llm_usage": {
+    "calls": 21,
+    "errors": 0,
+    "latency_sec": 0.0124,
+    "input_tokens": 43632,
+    "output_tokens": 2633,
+    "tokens_estimated": true,
+    "cost_usd": null,
+    "is_mock": true
+  },
+  "calls": [
+    {
+      "seq": 0,
+      "schema": "HypothesesGenerationOutput",
+      "raw_response": "{\"hypotheses\":[{\"hypothesis_id\":null,\"title\":\"Telemetry tracking loss\",\"explanation\":\"Client-side event tracking dropped events so reported metrics fell.\",\"category\":\"tracking_loss\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Code regression in a release\",\"explanation\":\"A recent release introduced a bug that broke part of checkout.\",\"category\":\"code_regression\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Traffic mix shift\",\"explanation\":\"The mix of arriving users shifted toward lower-converting segments.\",\"category\":\"traffic_mix_shift\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Third-party outage\",\"explanation\":\"An external payment dependency failed for a short period.\",\"category\":\"third_party_outage\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Seasonality or calendar effect\",\"explanation\":\"The comparison window covers weekends or holidays that are normally quieter.\",\"category\":\"seasonality_or_calendar\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Natural variation\",\"explanation\":\"The change is within normal day-to-day variation of the metric.\",\"category\":\"natural_variation\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Pricing or policy change\",\"explanation\":\"A price or policy change reduced conversion.\",\"category\":\"pricing_or_policy_change\",\"suggested_analysis\":\"\"},{\"hypothesis_id\":null,\"title\":\"Gradual cohort decay\",\"explanation\":\"Retention is eroding gradually across cohorts.\",\"category\":\"gradual_or_cohort_effect\",\"suggested_analysis\":\"\"}],\"reasoning\":\"Covering the main cause families the available tools can test, plus untestable ones.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0007
+    },
+    {
+      "seq": 1,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_1\",\"operation\":\"tracking_gap_check\",\"parameters\":{\"breakdown\":[\"browser\"]},\"dimensions\":[\"browser\"],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the tracking_loss hypothesis with tracking_gap_check.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0017
+    },
+    {
+      "seq": 2,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_1\",\"stance\":\"contradicts\",\"finding_summary\":\"tracking_gap_check: capture rates are consistent across segments (min p=1)\",\"rationale\":\"Rule-based reading of tracking_gap_check output for tracking_loss: stance=contradicts.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"refuted\",\"refined_category\":null,\"status_update_reason\":\"tracking_gap_check result contradicts the hypothesis (capture rates are consistent across segments (min p=1))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0006
+    },
+    {
+      "seq": 3,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_2\",\"operation\":\"release_did\",\"parameters\":{\"release_id\":\"rel_240\",\"window_days\":7,\"table\":\"orders\",\"metric_column\":\"status\",\"metric_value\":\"completed\"},\"dimensions\":[],\"filters\":{\"device_type\":\"mobile\"},\"comparison_window_needed\":false,\"rationale\":\"Test the code_regression hypothesis with release_did.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.001
+    },
+    {
+      "seq": 4,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_2\",\"stance\":\"supports\",\"finding_summary\":\"release_did: users on the new version fell by -0.526 relative to others (DiD p=5.72e-05)\",\"rationale\":\"Rule-based reading of release_did output for code_regression: stance=supports.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"supported\",\"refined_category\":null,\"status_update_reason\":\"release_did result supports the hypothesis (users on the new version fell by -0.526 relative to others (DiD p=5.72e-05))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0003
+    },
+    {
+      "seq": 5,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_3\",\"operation\":\"mix_shift_decomposition\",\"parameters\":{\"table\":\"sessions\",\"metric_column\":\"converted\",\"metric_value\":true,\"breakdown\":[\"acquisition_channel\"]},\"dimensions\":[\"acquisition_channel\"],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the traffic_mix_shift hypothesis with mix_shift_decomposition.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0006
+    },
+    {
+      "seq": 6,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_3\",\"stance\":\"contradicts\",\"finding_summary\":\"mix_shift_decomposition: mix effect -0.000143 explains little of -0.0295\",\"rationale\":\"Rule-based reading of mix_shift_decomposition output for traffic_mix_shift: stance=contradicts.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"refuted\",\"refined_category\":null,\"status_update_reason\":\"mix_shift_decomposition result contradicts the hypothesis (mix effect -0.000143 explains little of -0.0295)\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0003
+    },
+    {
+      "seq": 7,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_4\",\"operation\":\"error_analysis\",\"parameters\":{\"breakdown\":[\"failure_reason\"]},\"dimensions\":[\"failure_reason\"],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the third_party_outage hypothesis with error_analysis.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0005
+    },
+    {
+      "seq": 8,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_4\",\"stance\":\"supports\",\"finding_summary\":\"error_analysis: failures with a non-card reason are present\",\"rationale\":\"Rule-based reading of error_analysis output for third_party_outage: stance=supports.\",\"inference_type\":\"observational_correlation\",\"recommended_hypothesis_status\":\"supported\",\"refined_category\":null,\"status_update_reason\":\"error_analysis result supports the hypothesis (failures with a non-card reason are present)\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0004
+    },
+    {
+      "seq": 9,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_5\",\"operation\":\"seasonal_baseline\",\"parameters\":{\"table\":\"orders\",\"aggregation\":\"count\",\"baseline_weeks\":4},\"dimensions\":[],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the seasonality_or_calendar hypothesis with seasonal_baseline.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0005
+    },
+    {
+      "seq": 10,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_5\",\"stance\":\"contradicts\",\"finding_summary\":\"seasonal_baseline: deviation from same-weekday baseline remains (p=2.55e-08) or no weekday pattern (p=0.431)\",\"rationale\":\"Rule-based reading of seasonal_baseline output for seasonality_or_calendar: stance=contradicts.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"refuted\",\"refined_category\":null,\"status_update_reason\":\"seasonal_baseline result contradicts the hypothesis (deviation from same-weekday baseline remains (p=2.55e-08) or no weekday pattern (p=0.431))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0004
+    },
+    {
+      "seq": 11,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_6\",\"operation\":\"change_point\",\"parameters\":{\"table\":\"orders\",\"aggregation\":\"count\",\"lookback_days\":14},\"dimensions\":[],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the natural_variation hypothesis with change_point.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0007
+    },
+    {
+      "seq": 12,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_6\",\"stance\":\"contradicts\",\"finding_summary\":\"change_point: a change point exists (p=0.002)\",\"rationale\":\"Rule-based reading of change_point output for natural_variation: stance=contradicts.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"refuted\",\"refined_category\":null,\"status_update_reason\":\"change_point result contradicts the hypothesis (a change point exists (p=0.002))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0007
+    },
+    {
+      "seq": 13,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_8\",\"operation\":\"retention_comparison\",\"parameters\":{\"retention_days\":[1,7]},\"dimensions\":[],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the gradual_or_cohort_effect hypothesis with retention_comparison.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0004
+    },
+    {
+      "seq": 14,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_8\",\"stance\":\"supports\",\"finding_summary\":\"retention_comparison: retention changed (min p=6.2e-05)\",\"rationale\":\"Rule-based reading of retention_comparison output for gradual_or_cohort_effect: stance=supports.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"supported\",\"refined_category\":null,\"status_update_reason\":\"retention_comparison result supports the hypothesis (retention changed (min p=6.2e-05))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0003
+    },
+    {
+      "seq": 15,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_2\",\"operation\":\"error_analysis\",\"parameters\":{\"breakdown\":[\"failure_reason\"]},\"dimensions\":[\"failure_reason\"],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the code_regression hypothesis with error_analysis.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0005
+    },
+    {
+      "seq": 16,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_2\",\"stance\":\"supports\",\"finding_summary\":\"error_analysis: failed orders concentrate on one device segment\",\"rationale\":\"Rule-based reading of error_analysis output for code_regression: stance=supports.\",\"inference_type\":\"observational_correlation\",\"recommended_hypothesis_status\":\"supported\",\"refined_category\":null,\"status_update_reason\":\"error_analysis result supports the hypothesis (failed orders concentrate on one device segment)\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0003
+    },
+    {
+      "seq": 17,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_4\",\"operation\":\"spike_check\",\"parameters\":{\"table\":\"orders\",\"metric_column\":\"status\",\"metric_value\":\"failed\",\"lookback_days\":14},\"dimensions\":[],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the third_party_outage hypothesis with spike_check.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0002
+    },
+    {
+      "seq": 18,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_4\",\"stance\":\"contradicts\",\"finding_summary\":\"spike_check: no single abnormal day (0 day(s) with raw p<0.001)\",\"rationale\":\"Rule-based reading of spike_check output for third_party_outage: stance=contradicts.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"refuted\",\"refined_category\":null,\"status_update_reason\":\"spike_check result contradicts the hypothesis (no single abnormal day (0 day(s) with raw p<0.001))\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0005
+    },
+    {
+      "seq": 19,
+      "schema": "AnalysisDecision",
+      "raw_response": "{\"hypothesis_id_to_test\":\"hyp_8\",\"operation\":\"change_point\",\"parameters\":{\"table\":\"events\",\"aggregation\":\"count\"},\"dimensions\":[],\"filters\":{},\"comparison_window_needed\":false,\"rationale\":\"Test the gradual_or_cohort_effect hypothesis with change_point.\"}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0002
+    },
+    {
+      "seq": 20,
+      "schema": "EvidenceInterpretation",
+      "raw_response": "{\"hypothesis_id\":\"hyp_8\",\"stance\":\"supports\",\"finding_summary\":\"change_point: gradual decline, no single step\",\"rationale\":\"Rule-based reading of change_point output for gradual_or_cohort_effect: stance=supports.\",\"inference_type\":\"statistical_association\",\"recommended_hypothesis_status\":\"supported\",\"refined_category\":null,\"status_update_reason\":\"change_point result supports the hypothesis (gradual decline, no single step)\",\"unresolved_questions\":[],\"is_investigation_complete\":false,\"stopping_reason\":null,\"confidence_level\":null,\"confidence_justification\":null}",
+      "usage": {},
+      "valid": true,
+      "error": null,
+      "error_kind": null,
+      "latency_sec": 0.0003
+    }
+  ],
+  "evaluation": {
+    "model_id": "mock_reference",
+    "scenario": "product_regression",
+    "run": 0,
+    "is_mock": true,
+    "completed": true,
+    "run_error": null,
+    "api_errors": 0,
+    "schema_errors": 0,
+    "n_calls": 21,
+    "calls_per_valid": null,
+    "hypothesis_quality": 1.0,
+    "evidence_relevance": 0.5,
+    "analysis_selection": 0.9138,
+    "contradiction_handling": 0.7857,
+    "uncertainty_calibration": null,
+    "conclusion_quality": 0.3333,
+    "schema_compliance": 1.0,
+    "correct": false,
+    "outcome": "insufficient_evidence",
+    "supported": [
+      "code_regression",
+      "gradual_or_cohort_effect"
+    ],
+    "expected_primary": "code_regression",
+    "integrity_errors": 0,
+    "guardrail_blocks": 3,
+    "n_analyses": 10,
+    "tokens_in": 43632,
+    "tokens_out": 2633,
+    "tokens_estimated": true,
+    "cost_usd": null,
+    "latency_sec": 0.0124,
+    "wall_sec": 4.5747
+  }
+}

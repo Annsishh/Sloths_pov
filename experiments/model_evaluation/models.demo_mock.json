@@ -1,0 +1,9 @@
+{
+  "_note": "Offline harness demo only (needs --allow-mock). 'mock' = rule-based reference policy; 'mock-faulty' always returns malformed JSON. Neither is a model evaluation.",
+  "runs": 1,
+  "max_analyses": 10,
+  "models": [
+    {"id": "mock_reference", "provider": "mock", "model": "reference-policy"},
+    {"id": "mock_faulty", "provider": "mock-faulty", "model": "always-malformed-json"}
+  ]
+}
